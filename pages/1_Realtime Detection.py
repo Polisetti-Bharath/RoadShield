@@ -13,13 +13,20 @@ from streamlit_webrtc import WebRtcMode, webrtc_streamer
 from ultralytics import YOLO
 
 from sample_utils.get_STUNServer import getSTUNServer
+from sample_utils.ui import (
+    inject_base_css,
+    render_footer,
+    render_page_header,
+)
 
 st.set_page_config(
-    page_title="Realtime Detection",
+    page_title="Realtime Detection - RoadShield",
     page_icon="📷",
     layout="centered",
     initial_sidebar_state="expanded"
 )
+
+inject_base_css()
 
 HERE = Path(__file__).parent
 ROOT = HERE.parent
@@ -54,9 +61,11 @@ class Detection(NamedTuple):
     score: float
     box: np.ndarray
 
-st.title("Road Damage Detection - Realtime")
-
-st.write("Detect the road damage in realtime using USB Webcam. This can be useful for on-site monitoring with personel on the ground. Select the video input device and start the inference.")
+render_page_header(
+    icon="📷",
+    title="Realtime Detection",
+    subtitle="Detect road damage live using a USB webcam — useful for on-site monitoring with personnel on the ground.",
+)
 
 # NOTE: The callback will be called in another thread,
 #       so use a queue here for thread-safety to pass the data
@@ -65,13 +74,13 @@ st.write("Detect the road damage in realtime using USB Webcam. This can be usefu
 result_queue: "queue.Queue[List[Detection]]" = queue.Queue()
 
 def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
-    
+
     image = frame.to_ndarray(format="bgr24")
     h_ori = image.shape[0]
     w_ori = image.shape[1]
     image_resized = cv2.resize(image, (640, 640), interpolation = cv2.INTER_AREA)
     results = net.predict(image_resized, conf=score_threshold)
-    
+
     # Save the results on the queue
     for result in results:
         boxes = result.boxes.cpu().numpy()
@@ -91,6 +100,10 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
 
     return av.VideoFrame.from_ndarray(_image, format="bgr24")
 
+score_threshold = st.slider("Confidence Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05)
+st.caption("Lower the threshold if damage isn't being detected. Raise it if you're seeing false positives.")
+
+st.write("")
 webrtc_ctx = webrtc_streamer(
     key="road-damage-detection",
     mode=WebRtcMode.SENDRECV,
@@ -105,10 +118,6 @@ webrtc_ctx = webrtc_streamer(
     async_processing=True,
 )
 
-score_threshold = st.slider("Confidence Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05)
-
-st.write("Lower the threshold if there is no damage detected, and increase the threshold if there is false prediction.")
-
 st.divider()
 
 if st.checkbox("Show Predictions Table", value=False):
@@ -117,3 +126,7 @@ if st.checkbox("Show Predictions Table", value=False):
         while True:
             result = result_queue.get()
             labels_placeholder.table(result)
+    else:
+        st.caption("Start the webcam above to see live predictions here.")
+
+render_footer()

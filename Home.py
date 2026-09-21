@@ -1,35 +1,93 @@
 import streamlit as st
 
+from sample_utils.ui import (
+    inject_base_css,
+    render_class_legend,
+    render_footer,
+    render_hero,
+    render_tip,
+)
+
 st.set_page_config(
-    page_title="Road Damage Detections Apps",
+    page_title="RoadShield - Road Damage Detection",
     page_icon="🛣️",
+    layout="centered",
+    initial_sidebar_state="expanded",
 )
 
-st.image("./resource/banner.png", width="stretch")
-st.divider()
-st.title("Road Damage Detection Application")
+inject_base_css()
 
-st.markdown(
-    """
-    Introducing our Road Damage Detection Apps, powered by the YOLOv8 deep learning model trained on Crowdsensing-based Road Damage Detection Challenge 2022 Dataset.
-    
-    This application is designed to enhance road safety and infrastructure maintenance by swiftly identifying and categorizing various forms of road damage, such as potholes and cracks.
-
-    There is four types of damage that this model can detects such as:
-    - Longitudinal Crack
-    - Transverse Crack
-    - Alligator Crack
-    - Potholes
-
-    The model trained on YOLOv8 small model on Japan and India CRDDC2022 dataset.
-
-    You can select the apps from the sidebar to try and experiment with any kind of input **(realtime-webcam, video and images)** depends on your use case.
-
-    #### License and Citations
-    - Road Damage Dataset from Crowdsensing-based Road Damage Detection Challenge (CRDDC2022)
-    - YOLOv8 by Ultralytics
-"""
+render_hero(
+    badge="🛣️ AI-Powered Road Inspection",
+    title="Spot road damage before it becomes a hazard",
+    description=(
+        "RoadShield uses a YOLOv8 deep learning model to automatically detect and "
+        "classify cracks and potholes from a webcam feed, a photo, or a video — "
+        "so crews can prioritize repairs faster and drivers stay safer."
+    ),
 )
 
+st.markdown('<p class="rs-section-label">Choose how you want to inspect</p>', unsafe_allow_html=True)
 
+col1, col2, col3 = st.columns(3)
 
+with col1:
+    st.markdown(
+        """
+        <div class="rs-feature-card glow-indigo">
+            <div class="rs-feature-icon">📷</div>
+            <h3>Realtime Detection</h3>
+            <p>Point a USB webcam at the road and get live detections — ideal for
+            on-site monitoring while a vehicle or inspector is moving.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col2:
+    st.markdown(
+        """
+        <div class="rs-feature-card glow-violet">
+            <div class="rs-feature-icon">🖼️</div>
+            <h3>Image Detection</h3>
+            <p>Upload a single photo to quickly check a specific stretch of road
+            or verify a report someone else submitted.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col3:
+    st.markdown(
+        """
+        <div class="rs-feature-card glow-pink">
+            <div class="rs-feature-icon">🎬</div>
+            <h3>Video Detection</h3>
+            <p>Process a recorded drive-through video frame by frame and export
+            an annotated copy for your maintenance records.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+st.write("")
+st.markdown('<p class="rs-section-label">Damage types it recognizes</p>', unsafe_allow_html=True)
+render_class_legend()
+
+st.write("")
+render_tip("👈", "Pick a mode from the sidebar to get started.")
+
+with st.expander("About this project"):
+    st.markdown(
+        """
+        RoadShield is built on **YOLOv8-small**, trained on the
+        [Crowdsensing-based Road Damage Detection Challenge (CRDDC2022)](https://crddc2022.sekilab.global/)
+        dataset covering road imagery from Japan and India.
+
+        **License & Citations**
+        - Road Damage Dataset from CRDDC2022
+        - YOLOv8 by Ultralytics
+        """
+    )
+
+render_footer()

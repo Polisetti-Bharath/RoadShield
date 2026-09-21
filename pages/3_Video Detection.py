@@ -1,5 +1,6 @@
 import os
 import logging
+from collections import Counter
 from pathlib import Path
 from typing import List, NamedTuple
 
@@ -10,14 +11,21 @@ import streamlit as st
 # Deep learning framework
 from ultralytics import YOLO
 
-
+from sample_utils.ui import (
+    CLASS_COLORS,
+    inject_base_css,
+    render_footer,
+    render_page_header,
+)
 
 st.set_page_config(
-    page_title="Video Detection",
-    page_icon="📷",
+    page_title="Video Detection - RoadShield",
+    page_icon="🎬",
     layout="centered",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
+
+inject_base_css()
 
 HERE = Path(__file__).parent
 ROOT = HERE.parent
@@ -42,11 +50,13 @@ CLASSES = [
     "Potholes"
 ]
 
+
 class Detection(NamedTuple):
     class_id: int
     label: str
     score: float
     box: np.ndarray
+
 
 # Create temporary folder if doesn't exists
 if not os.path.exists('./temp'):
@@ -61,22 +71,24 @@ if 'processing_button' in st.session_state and st.session_state.processing_butto
 else:
     st.session_state.runningInference = False
 
+
 # func to save BytesIO on a drive
 def write_bytesio_to_file(filename, bytesio):
     """
     Write the contents of the given BytesIO to a file.
     Creates the file or overwrites the file if it does
-    not exist yet. 
+    not exist yet.
     """
     with open(filename, "wb") as outfile:
         # Copy the BytesIO stream to the output file
         outfile.write(bytesio.getbuffer())
 
+
 def processVideo(video_file, score_threshold):
-    
+
     # Write the file into disk
     write_bytesio_to_file(temp_file_input, video_file)
-    
+
     videoCapture = cv2.VideoCapture(temp_file_input)
 
     # Check the video
@@ -90,11 +102,29 @@ def processVideo(video_file, score_threshold):
         _duration = _frame_count/_fps
         _duration_minutes = int(_duration/60)
         _duration_seconds = int(_duration%60)
-        _duration_strings = str(_duration_minutes) + ":" + str(_duration_seconds)
+        _duration_strings = str(_duration_minutes) + ":" + str(_duration_seconds).zfill(2)
 
-        st.write("Video Duration :", _duration_strings)
-        st.write("Width, Height and FPS :", _width, _height, _fps)
+        info_cols = st.columns(3)
+        with info_cols[0]:
+            st.markdown(
+                f'<div class="rs-stat"><div class="rs-stat-value">{_duration_strings}</div>'
+                f'<div class="rs-stat-label">Duration (min:sec)</div></div>',
+                unsafe_allow_html=True,
+            )
+        with info_cols[1]:
+            st.markdown(
+                f'<div class="rs-stat"><div class="rs-stat-value">{_width}x{_height}</div>'
+                f'<div class="rs-stat-label">Resolution</div></div>',
+                unsafe_allow_html=True,
+            )
+        with info_cols[2]:
+            st.markdown(
+                f'<div class="rs-stat"><div class="rs-stat-value">{_fps:.0f}</div>'
+                f'<div class="rs-stat-label">FPS</div></div>',
+                unsafe_allow_html=True,
+            )
 
+        st.write("")
         inferenceBarText = "Performing inference on video, please wait."
         inferenceBar = st.progress(0, text=inferenceBarText)
 
@@ -107,12 +137,14 @@ def processVideo(video_file, score_threshold):
         fourcc_mp4 = cv2.VideoWriter_fourcc(*'mp4v')
         cv2writer = cv2.VideoWriter(temp_file_infer, fourcc_mp4, _fps, (_width, _height))
 
+        detection_totals = Counter()
+
         # Read until video is completed
         _frame_counter = 0
         while(videoCapture.isOpened()):
             ret, frame = videoCapture.read()
             if ret == True:
-                
+
                 # Convert color-chanel
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
@@ -121,7 +153,7 @@ def processVideo(video_file, score_threshold):
 
                 image_resized = cv2.resize(_image, (640, 640), interpolation = cv2.INTER_AREA)
                 results = net.predict(image_resized, conf=score_threshold)
-                
+
                 # Save the results
                 for result in results:
                     boxes = result.boxes.cpu().numpy()
@@ -134,22 +166,21 @@ def processVideo(video_file, score_threshold):
                         )
                         for _box in boxes
                     ]
+                    detection_totals.update(d.label for d in detections)
 
                 annotated_frame = results[0].plot()
                 _image_pred = cv2.resize(annotated_frame, (_width, _height), interpolation = cv2.INTER_AREA)
 
-                print(_image_pred.shape)
-                
                 # Write the image to file
                 _out_frame = cv2.cvtColor(_image_pred, cv2.COLOR_RGB2BGR)
                 cv2writer.write(_out_frame)
-                
+
                 # Display the image
                 imageLocation.image(_image_pred)
 
                 _frame_counter = _frame_counter + 1
                 inferenceBar.progress(_frame_counter/_frame_count, text=inferenceBarText)
-            
+
             # Break the loop
             else:
                 inferenceBar.empty()
@@ -160,36 +191,65 @@ def processVideo(video_file, score_threshold):
         cv2writer.release()
 
     # Download button for the video
-    st.success("Video Processed!")
+    st.success("Video processed successfully!")
 
+    st.write("")
+    st.markdown('<p class="rs-section-label">Damage detected across the video</p>', unsafe_allow_html=True)
+    if detection_totals:
+        stat_cols = st.columns(len(detection_totals))
+        for col, (label, n) in zip(stat_cols, detection_totals.items()):
+            with col:
+                color = CLASS_COLORS.get(label, "#2563EB")
+                st.markdown(
+                    f"""
+                    <div class="rs-stat">
+                        <div class="rs-stat-value" style="color:{color}">{n}</div>
+                        <div class="rs-stat-label">{label}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+    else:
+        st.info("No damage detected across any frame at the current confidence threshold.")
+
+    st.write("")
     col1, col2 = st.columns(2)
     with col1:
         # Also rerun the appplication after download
         with open(temp_file_infer, "rb") as f:
             st.download_button(
-                label="Download Prediction Video",
+                label="⬇ Download Prediction Video",
                 data=f,
                 file_name="RDD_Prediction.mp4",
                 mime="video/mp4",
-                use_container_width=True
+                width="stretch",
             )
-            
+
     with col2:
-        if st.button('Restart Apps', use_container_width=True, type="primary"):
+        if st.button('Restart', width="stretch", type="primary"):
             # Rerun the application
             st.rerun()
 
-st.title("Road Damage Detection - Video")
-st.write("Detect the road damage in using Video input. Upload the video and start detecting. This section can be useful for examining and process the recorded videos.")
 
-video_file = st.file_uploader("Upload Video", type=".mp4", disabled=st.session_state.runningInference)
-st.caption("There is 1GB limit for video size with .mp4 extension. Resize or cut your video if its bigger than 1GB.")
+render_page_header(
+    icon="🎬",
+    title="Video Detection",
+    subtitle="Upload a drive-through recording and RoadShield will scan it frame by frame for damage.",
+)
 
-score_threshold = st.slider("Confidence Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05, disabled=st.session_state.runningInference)
-st.write("Lower the threshold if there is no damage detected, and increase the threshold if there is false prediction. You can change the threshold before running the inference.")
+with st.container():
+    st.markdown('<div class="rs-card">', unsafe_allow_html=True)
+    video_file = st.file_uploader("Upload a video (.mp4)", type=".mp4", disabled=st.session_state.runningInference)
+    st.caption("There is a 1GB limit for video size. Resize or trim your video if it's larger than that.")
+
+    score_threshold = st.slider("Confidence Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05, disabled=st.session_state.runningInference)
+    st.caption("Lower the threshold if damage isn't being detected. Raise it if you're seeing false positives.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 if video_file is not None:
-    if st.button('Process Video', use_container_width=True, disabled=st.session_state.runningInference, type="secondary", key="processing_button"):
-        _warning = "Processing Video " + video_file.name
-        st.warning(_warning)
+    st.write("")
+    if st.button('▶ Process Video', width="stretch", disabled=st.session_state.runningInference, type="primary", key="processing_button"):
+        st.warning(f"Processing {video_file.name}...")
         processVideo(video_file, score_threshold)
+
+render_footer()
