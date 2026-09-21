@@ -237,14 +237,12 @@ render_page_header(
     subtitle="Upload a drive-through recording and RoadShield will scan it frame by frame for damage.",
 )
 
-with st.container():
-    st.markdown('<div class="rs-card">', unsafe_allow_html=True)
+with st.container(key="rs-upload-card"):
     video_file = st.file_uploader("Upload a video (.mp4)", type=".mp4", disabled=st.session_state.runningInference)
     st.caption("There is a 1GB limit for video size. Resize or trim your video if it's larger than that.")
 
     score_threshold = st.slider("Confidence Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05, disabled=st.session_state.runningInference)
     st.caption("Lower the threshold if damage isn't being detected. Raise it if you're seeing false positives.")
-    st.markdown('</div>', unsafe_allow_html=True)
 
 if video_file is not None:
     st.write("")

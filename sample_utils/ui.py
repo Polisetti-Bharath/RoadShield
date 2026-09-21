@@ -210,6 +210,17 @@ def inject_base_css() -> None:
             animation: rsFadeUp 0.6s ease both;
         }
 
+        /* ---- Glass-style wrapper for st.container(key=...) blocks ---- */
+        div.st-key-rs-upload-card {
+            background: var(--rs-glass);
+            border: 1px solid var(--rs-glass-border);
+            border-radius: 18px;
+            padding: 1.3rem 1.4rem;
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            box-shadow: 0 8px 30px -14px rgba(0,0,0,0.5);
+        }
+
         /* ---- Generic glass card ---- */
         .rs-card {
             position: relative;

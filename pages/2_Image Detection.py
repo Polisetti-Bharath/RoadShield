@@ -65,12 +65,10 @@ render_page_header(
     subtitle="Upload a photo of a road surface and RoadShield will highlight every crack or pothole it finds.",
 )
 
-with st.container():
-    st.markdown('<div class="rs-card">', unsafe_allow_html=True)
+with st.container(key="rs-upload-card"):
     image_file = st.file_uploader("Upload an image (PNG or JPG)", type=["png", "jpg"])
     score_threshold = st.slider("Confidence Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05)
     st.caption("Lower the threshold if damage isn't being detected. Raise it if you're seeing false positives.")
-    st.markdown('</div>', unsafe_allow_html=True)
 
 if image_file is not None:
 
