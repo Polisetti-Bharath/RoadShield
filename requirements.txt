@@ -1,10 +1,12 @@
-av
-numpy
-Pillow
-streamlit
-streamlit-webrtc
+av==17.1.0
+numpy==2.2.6
+Pillow==12.3.0
+streamlit==1.64.0
+streamlit-webrtc==0.78.1
+# torch/torchvision are left unpinned on purpose: install the CUDA build first
+# (see README) if you have an NVIDIA GPU, then this file will leave it alone.
 torch
 torchvision
-ultralytics
-opencv-python-headless
-requests
+ultralytics==8.4.157
+opencv-python-headless==5.0.0.93
+requests==2.34.2

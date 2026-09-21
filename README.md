@@ -23,7 +23,7 @@ There is four types of damage that this model can detects such as:
 
 This is the step that you take to install and run the web-application on the local server.
 
-Requires Python 3.10 or 3.11 (the pinned versions in `requirements.txt` are unpinned to stay portable across teammates' machines/OSes, but very new or very old Python versions may still break `torch`/`opencv`).
+Requires Python 3.10 or 3.11 (very new or very old Python versions may break `torch`/`opencv`). Every dependency in `requirements.txt` is pinned to a known-working version except `torch`/`torchvision`, which are left unpinned on purpose so the CUDA install step below can pick the right build for your machine.
 
 ``` bash
 # Using uv (recommended, works cross-platform without needing conda)
