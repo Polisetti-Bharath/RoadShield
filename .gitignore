@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Streamlit runtime temp files
+pages/temp/
+temp/
+
+# Training artifacts / datasets (large, not meant for git)
+training/dataset/
+training/runs/
+runs/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*:Zone.Identifier

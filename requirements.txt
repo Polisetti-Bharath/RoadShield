@@ -1,0 +1,10 @@
+av
+numpy
+Pillow
+streamlit
+streamlit-webrtc
+torch
+torchvision
+ultralytics
+opencv-python-headless
+requests
