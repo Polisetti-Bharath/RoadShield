@@ -24,3 +24,9 @@ runs/
 .vscode/
 .idea/
 *:Zone.Identifier
+
+# Streamlit secrets (not created yet, but never commit this if added)
+.streamlit/secrets.toml
+
+# Logs
+*.log

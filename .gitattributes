@@ -1,0 +1,10 @@
+# Auto-detect text files and normalize line endings
+* text=auto
+
+# Treat these as binary (no line-ending conversion, no text diff)
+*.pt binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary

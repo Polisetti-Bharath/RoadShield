@@ -26,13 +26,12 @@
    * [6.5 Model Evaluation Metrics & Accuracy Results](#65-model-evaluation-metrics--accuracy-results)
 7. [Detailed File-by-File Code Breakdown](#7-detailed-file-by-file-code-breakdown)
    * [7.1 `Home.py`](#71-homepy)
-   * [7.2 `pages/1_Realtime Detection.py`](#72-pages1_realtime-detectionpy)
-   * [7.3 `pages/2_Image Detection.py`](#73-pages2_image-detectionpy)
-   * [7.4 `pages/3_Video Detection.py`](#74-pages3_video-detectionpy)
+   * [7.2 `pages/1_Realtime_Detection.py`](#72-pages1_realtime_detectionpy)
+   * [7.3 `pages/2_Image_Detection.py`](#73-pages2_image_detectionpy)
+   * [7.4 `pages/3_Video_Detection.py`](#74-pages3_video_detectionpy)
    * [7.5 `sample_utils/get_STUNServer.py`](#75-sample_utilsget_stunserverpy)
-   * [7.6 `sample_utils/download.py`](#76-sample_utilsdownloadpy)
-   * [7.7 `.streamlit/config.toml`](#77-streamlitconfigtoml)
-   * [7.8 Training Notebooks (`0_PrepareDatasetYOLOv8.ipynb`, `1_TrainingYOLOv8.ipynb`, `2_EvaluationTesting.ipynb`)](#78-training-notebooks)
+   * [7.6 `.streamlit/config.toml`](#76-streamlitconfigtoml)
+   * [7.7 Training Notebooks (`0_PrepareDatasetYOLOv8.ipynb`, `1_TrainingYOLOv8.ipynb`, `2_EvaluationTesting.ipynb`)](#77-training-notebooks)
 8. [Installation & User Guide](#8-installation--user-guide)
 9. [Frequently Asked Questions (FAQ) & Troubleshooting](#9-frequently-asked-questions-faq--troubleshooting)
 
@@ -179,9 +178,9 @@ flowchart TD
     User([User Browser Interface]) -->|Selects Mode| Sidebar[Streamlit Page Router]
 
     Sidebar -->|Home| Page0[Home.py Landing Page]
-    Sidebar -->|Mode 1| Page1[pages/1_Realtime Detection.py]
-    Sidebar -->|Mode 2| Page2[pages/2_Image Detection.py]
-    Sidebar -->|Mode 3| Page3[pages/3_Video Detection.py]
+    Sidebar -->|Mode 1| Page1[pages/1_Realtime_Detection.py]
+    Sidebar -->|Mode 2| Page2[pages/2_Image_Detection.py]
+    Sidebar -->|Mode 3| Page3[pages/3_Video_Detection.py]
 
     subgraph Deep Learning Engine
         Weights[models/YOLOv8_Small_RDD.pt]
@@ -389,13 +388,16 @@ Evaluated using `2_EvaluationTesting.ipynb` on an NVIDIA GeForce RTX 2060 GPU ac
 
 ### 7.1 `Home.py`
 The landing page and root entrypoint for the Streamlit application.
-* `st.set_page_config(...)`: Sets browser tab title to "Road Damage Detections Apps" and icon to `🛣️`.
-* `st.image("./resource/banner.png")`: Displays top banner image.
-* `st.markdown(...)`: Renders markdown text explaining the project background, model capabilities, target classes, and sidebar navigation instructions.
+* `st.set_page_config(...)`: Sets browser tab title to "RoadShield - Road Damage Detection" and icon to `🛣️`.
+* `inject_base_css()` (from `sample_utils/ui.py`): Injects the shared dark-glass theme, fonts, and component styles used across all pages.
+* `render_hero(...)`: Renders the hero banner with badge, title, and description.
+* Three `st.columns` feature cards linking the concept of Realtime, Image, and Video detection modes.
+* `render_class_legend()`: Renders the damage-type color legend (Longitudinal/Transverse/Alligator Crack, Potholes).
+* An `st.expander("About this project")` with dataset/model attribution, followed by `render_footer()`.
 
 ---
 
-### 7.2 `pages/1_Realtime Detection.py`
+### 7.2 `pages/1_Realtime_Detection.py`
 Handles live webcam streaming and real-time bounding box rendering.
 
 #### Key Code Components:
@@ -424,7 +426,7 @@ Handles live webcam streaming and real-time bounding box rendering.
 
 ---
 
-### 7.3 `pages/2_Image Detection.py`
+### 7.3 `pages/2_Image_Detection.py`
 Handles static image file upload and prediction download.
 
 #### Key Code Components:
@@ -436,7 +438,7 @@ Handles static image file upload and prediction download.
 
 ---
 
-### 7.4 `pages/3_Video Detection.py`
+### 7.4 `pages/3_Video_Detection.py`
 Handles offline video file processing frame-by-frame.
 
 #### Key Code Components:
@@ -461,24 +463,19 @@ Dynamic STUN server location utility for WebRTC.
 
 ---
 
-### 7.6 `sample_utils/download.py`
-Utility to download remote model weights with a Streamlit progress bar (`st.progress`) tracking downloaded megabytes against total content length.
-
----
-
-### 7.7 `.streamlit/config.toml`
+### 7.6 `.streamlit/config.toml`
 Streamlit server configuration file:
 ```toml
 [server]
 maxUploadSize = 1000 # Allows uploading video files up to 1000 Megabytes (1GB)
 
 [theme]
-base = "light" # Enforces standard light theme styling
+base = "dark" # Enforces the dark glass theme used by sample_utils/ui.py
 ```
 
 ---
 
-### 7.8 Training Notebooks
+### 7.7 Training Notebooks
 1. **`0_PrepareDatasetYOLOv8.ipynb`**: Data conversion from PascalVOC XML to YOLO TXT format, background image filtering, and creation of `rddJapanIndiaFiltered` folder structure.
 2. **`1_TrainingYOLOv8.ipynb`**: Training execution script with hyperparameter definitions and training resumption capabilities (`resume=True`).
 3. **`2_EvaluationTesting.ipynb`**: Validation execution script generating metrics (Precision, Recall, mAP50, mAP50-95) and saving evaluation plots to `runs/detect/val`.
@@ -487,27 +484,19 @@ base = "light" # Enforces standard light theme styling
 
 ## 8. Installation & User Guide
 
-### Step 1: Environment Setup
+See `README.md` for the up-to-date, step-by-step local setup instructions (using `uv`, Python 3.10/3.11, and the CUDA/CPU `torch` install choice). The short version:
+
 ```bash
-# Clone repository and enter folder
-cd RoadDamageDetection-main
+# From the RoadShield/ project root
+uv venv --python 3.10 .venv
+source .venv/bin/activate        # on Windows: .venv\Scripts\activate
 
-# Create isolated Python 3.8 environment
-conda create -n rdd python=3.8 -y
-conda activate rdd
-```
+# Pick ONE: CUDA build (NVIDIA GPU) or CPU-only build
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# uv pip install torch torchvision   # CPU-only
 
-### Step 2: Install PyTorch & Dependencies
-```bash
-# Install PyTorch with CUDA 11.8 support
-conda install pytorch==2.0.0 torchvision==0.15.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c nvidia
+uv pip install -r requirements.txt
 
-# Install Python requirements
-pip install -r requirements.txt
-```
-
-### Step 3: Run the Application
-```bash
 streamlit run Home.py
 ```
 Open your browser and navigate to `http://localhost:8501`.
