@@ -12,6 +12,14 @@ from PIL import Image
 # Deep learning framework
 from ultralytics import YOLO
 
+from sample_utils.report import (
+    estimate_severity,
+    get_gps_from_exif,
+    render_authority_contact_settings,
+    render_location_picker,
+    render_report_card,
+    reverse_geocode,
+)
 from sample_utils.ui import (
     CLASS_COLORS,
     inject_base_css,
@@ -73,6 +81,7 @@ with st.container(key="rs-upload-card"):
 if image_file is not None:
 
     # Load the image
+    image_bytes = image_file.getvalue()
     image = Image.open(image_file)
 
     # Perform inference
@@ -148,5 +157,41 @@ if image_file is not None:
             mime="image/png",
             width="stretch",
         )
+
+    pothole_detections = [d for d in detections if d.label == "Potholes"]
+    if pothole_detections:
+        st.write("")
+        st.markdown('<p class="rs-section-label">Report to Authorities</p>', unsafe_allow_html=True)
+
+        exif_location = get_gps_from_exif(image_bytes)
+        if exif_location:
+            lat, lon = exif_location
+            address = reverse_geocode(lat, lon)
+            st.caption("📍 Location auto-detected from the photo's EXIF data.")
+        else:
+            location = render_location_picker(key_prefix="img")
+            lat, lon, address = location if location else (None, None, None)
+
+        if lat is not None:
+            whatsapp_number, authority_email = render_authority_contact_settings()
+            for i, det in enumerate(pothole_detections):
+                severity, severity_pct = estimate_severity(det.box, 640, 640)
+                with st.expander(
+                    f"🚨 Pothole #{i + 1} — {severity} severity", expanded=(len(pothole_detections) == 1)
+                ):
+                    render_report_card(
+                        key_prefix=f"img_{i}",
+                        label=det.label,
+                        severity=severity,
+                        severity_pct=severity_pct,
+                        lat=lat,
+                        lon=lon,
+                        address=address,
+                        image=Image.fromarray(_image_pred),
+                        whatsapp_number=whatsapp_number,
+                        authority_email=authority_email,
+                    )
+        else:
+            st.info("Share your location above to enable reporting.")
 
 render_footer()

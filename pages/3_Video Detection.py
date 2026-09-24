@@ -11,6 +11,14 @@ import streamlit as st
 # Deep learning framework
 from ultralytics import YOLO
 
+from PIL import Image
+
+from sample_utils.report import (
+    estimate_severity,
+    render_authority_contact_settings,
+    render_location_picker,
+    render_report_card,
+)
 from sample_utils.ui import (
     CLASS_COLORS,
     inject_base_css,
@@ -138,6 +146,7 @@ def processVideo(video_file, score_threshold):
         cv2writer = cv2.VideoWriter(temp_file_infer, fourcc_mp4, _fps, (_width, _height))
 
         detection_totals = Counter()
+        best_pothole = None  # (severity_pct, severity_label, annotated_frame_rgb)
 
         # Read until video is completed
         _frame_counter = 0
@@ -168,8 +177,18 @@ def processVideo(video_file, score_threshold):
                     ]
                     detection_totals.update(d.label for d in detections)
 
+                    for det in detections:
+                        if det.label != "Potholes":
+                            continue
+                        severity, severity_pct = estimate_severity(det.box, 640, 640)
+                        if best_pothole is None or severity_pct > best_pothole[0]:
+                            best_pothole = (severity_pct, severity, None)  # frame filled in below
+
                 annotated_frame = results[0].plot()
                 _image_pred = cv2.resize(annotated_frame, (_width, _height), interpolation = cv2.INTER_AREA)
+
+                if best_pothole is not None and best_pothole[2] is None:
+                    best_pothole = (best_pothole[0], best_pothole[1], _image_pred.copy())
 
                 # Write the image to file
                 _out_frame = cv2.cvtColor(_image_pred, cv2.COLOR_RGB2BGR)
@@ -189,6 +208,8 @@ def processVideo(video_file, score_threshold):
         # When everything done, release the video capture object
         videoCapture.release()
         cv2writer.release()
+
+    st.session_state["video_best_pothole"] = best_pothole
 
     # Download button for the video
     st.success("Video processed successfully!")
@@ -229,6 +250,31 @@ def processVideo(video_file, score_threshold):
         if st.button('Restart', width="stretch", type="primary"):
             # Rerun the application
             st.rerun()
+
+    if best_pothole is not None:
+        severity_pct, severity, frame_rgb = best_pothole
+        st.write("")
+        st.markdown('<p class="rs-section-label">Report to Authorities</p>', unsafe_allow_html=True)
+        st.caption("Showing the most severe pothole frame found in this video.")
+
+        location = render_location_picker(key_prefix="vid")
+        if location:
+            lat, lon, address = location
+            whatsapp_number, authority_email = render_authority_contact_settings()
+            render_report_card(
+                key_prefix="vid_report",
+                label="Potholes",
+                severity=severity,
+                severity_pct=severity_pct,
+                lat=lat,
+                lon=lon,
+                address=address,
+                image=Image.fromarray(frame_rgb),
+                whatsapp_number=whatsapp_number,
+                authority_email=authority_email,
+            )
+        else:
+            st.info("Share your location above to enable reporting.")
 
 
 render_page_header(

@@ -16,6 +16,9 @@ training/dataset/
 training/runs/
 runs/
 
+# Saved authority contact (personal WhatsApp/email, not meant for git)
+.rs_authority_contact.json
+
 # OS / editor
 .DS_Store
 .vscode/
