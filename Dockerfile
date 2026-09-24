@@ -1,0 +1,36 @@
+FROM python:3.11-slim-bookworm
+
+# OpenCV / Streamlit-WebRTC runtime libraries (matches packages.txt used for
+# Streamlit Community Cloud, plus libglib2.0-0 which opencv-python-headless
+# also needs on a minimal base image).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python dependencies first so this layer is cached across code changes.
+# torch/torchvision are installed explicitly (CPU build) since requirements.txt
+# leaves them unpinned on purpose for local dev flexibility (see README.md).
+COPY requirements.txt .
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r requirements.txt
+
+# App code and runtime assets (training/, tests/, resource/ docs images are
+# intentionally excluded via .dockerignore -- not needed at runtime).
+COPY Home.py .
+COPY .streamlit/ .streamlit/
+COPY pages/ pages/
+COPY sample_utils/ sample_utils/
+COPY models/ models/
+
+RUN mkdir -p /app/temp
+
+EXPOSE 8501
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')" || exit 1
+
+ENTRYPOINT ["streamlit", "run", "Home.py", "--server.port=8501", "--server.address=0.0.0.0"]

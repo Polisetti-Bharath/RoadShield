@@ -59,6 +59,13 @@ streamlit run Home.py
 ```
 </details>
 
+## Running with Docker
+
+```bash
+docker compose up --build
+```
+Then open `http://localhost:8501`. The image runs on CPU (no GPU passthrough) and bundles the inference model weights; the training notebooks/dataset are not included in the image.
+
 ## Training
 
 ### Prepare the Dataset
