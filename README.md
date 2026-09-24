@@ -66,6 +66,16 @@ docker compose up --build
 ```
 Then open `http://localhost:8501`. The image runs on CPU (no GPU passthrough) and bundles the inference model weights; the training notebooks/dataset are not included in the image.
 
+### Pre-built image
+
+On every push to `main` (or a `v*` tag), GitHub Actions builds and publishes the image to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/polisetti-bharath/roadshield:latest
+```
+
+This requires the repo's Settings → Actions → General → Workflow permissions to be set to "Read and write permissions" (one-time, admin-only setup) so the CI token can push packages.
+
 ## Training
 
 ### Prepare the Dataset
