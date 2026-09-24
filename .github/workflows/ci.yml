@@ -28,10 +28,10 @@ jobs:
           python-version: "3.11"
           cache: "pip"
           cache-dependency-path: requirements-dev.txt
-      - name: Install CPU torch
-        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
+      - name: Sanity check imports
+        run: python -c "import torch, torchvision, ultralytics; from sample_utils.model import load_model; print(torch.__version__, torchvision.__version__)"
       - name: Run tests
         run: pytest tests/ -v
 

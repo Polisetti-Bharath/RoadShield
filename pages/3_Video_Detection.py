@@ -48,7 +48,7 @@ temp_file_input = "./temp/video_input.mp4"
 temp_file_infer = "./temp/video_infer.mp4"
 
 # Processing state
-if 'processing_button' in st.session_state and st.session_state.processing_button == True:
+if 'processing_button' in st.session_state and st.session_state.processing_button:
     st.session_state.runningInference = True
 else:
     st.session_state.runningInference = False
@@ -74,7 +74,7 @@ def processVideo(video_file, score_threshold):
     videoCapture = cv2.VideoCapture(temp_file_input)
 
     # Check the video
-    if (videoCapture.isOpened() == False):
+    if not videoCapture.isOpened():
         st.error('Error opening the video file')
     else:
         _width = int(videoCapture.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -112,8 +112,10 @@ def processVideo(video_file, score_threshold):
 
         imageLocation = st.empty()
 
-        # Issue with opencv-python with pip doesn't support h264 codec due to license, so we cant show the mp4 video on the streamlit in the cloud
-        # If you can install the opencv through conda using this command, maybe you can render the video for the streamlit
+        # Issue with opencv-python with pip doesn't support h264 codec due to
+        # license, so we cant show the mp4 video on the streamlit in the cloud
+        # If you can install the opencv through conda using this command,
+        # maybe you can render the video for the streamlit
         # $ conda install -c conda-forge opencv
         # fourcc_mp4 = cv2.VideoWriter_fourcc(*'h264')
         fourcc_mp4 = cv2.VideoWriter_fourcc(*'mp4v')
@@ -126,7 +128,7 @@ def processVideo(video_file, score_threshold):
         _frame_counter = 0
         while(videoCapture.isOpened()):
             ret, frame = videoCapture.read()
-            if ret == True:
+            if ret:
 
                 # Convert color-chanel
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -261,12 +263,18 @@ with st.container(key="rs-upload-card"):
     video_file = st.file_uploader("Upload a video (.mp4)", type=".mp4", disabled=st.session_state.runningInference)
     st.caption("There is a 1GB limit for video size. Resize or trim your video if it's larger than that.")
 
-    score_threshold = st.slider("Confidence Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05, disabled=st.session_state.runningInference)
+    score_threshold = st.slider(
+        "Confidence Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05,
+        disabled=st.session_state.runningInference,
+    )
     st.caption("Lower the threshold if damage isn't being detected. Raise it if you're seeing false positives.")
 
 if video_file is not None:
     st.write("")
-    if st.button('▶ Process Video', width="stretch", disabled=st.session_state.runningInference, type="primary", key="processing_button"):
+    if st.button(
+        '▶ Process Video', width="stretch", disabled=st.session_state.runningInference,
+        type="primary", key="processing_button",
+    ):
         st.warning(f"Processing {video_file.name}...")
         processVideo(video_file, score_threshold)
 

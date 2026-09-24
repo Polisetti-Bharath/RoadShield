@@ -492,7 +492,8 @@ def render_footer() -> None:
     st.markdown(
         """
         <div class="rs-footer">
-            <span class="rs-footer-gradient">RoadShield</span> &middot; Powered by YOLOv8 &middot; Trained on the CRDDC2022 dataset
+            <span class="rs-footer-gradient">RoadShield</span> &middot; Powered by YOLOv8
+            &middot; Trained on the CRDDC2022 dataset
         </div>
         """,
         unsafe_allow_html=True,
