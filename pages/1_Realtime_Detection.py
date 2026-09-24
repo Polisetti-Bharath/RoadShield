@@ -1,20 +1,16 @@
 import logging
 import queue
 from pathlib import Path
-from typing import List, NamedTuple
+from typing import List
 
 import av
 import cv2
-import numpy as np
 import streamlit as st
+from PIL import Image
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
 
-# Deep learning framework
-from ultralytics import YOLO
-
-from PIL import Image
-
 from sample_utils.get_STUNServer import getSTUNServer
+from sample_utils.model import CLASSES, Detection, load_model
 from sample_utils.report import (
     estimate_severity,
     render_authority_contact_settings,
@@ -47,27 +43,7 @@ MODEL_LOCAL_PATH = ROOT / "./models/YOLOv8_Small_RDD.pt"
 STUN_STRING = "stun:" + str(getSTUNServer())
 STUN_SERVER = [{"urls": [STUN_STRING]}]
 
-# Session-specific caching
-# Load the model
-cache_key = "yolov8smallrdd"
-if cache_key in st.session_state:
-    net = st.session_state[cache_key]
-else:
-    net = YOLO(MODEL_LOCAL_PATH)
-    st.session_state[cache_key] = net
-
-CLASSES = [
-    "Longitudinal Crack",
-    "Transverse Crack",
-    "Alligator Crack",
-    "Potholes"
-]
-
-class Detection(NamedTuple):
-    class_id: int
-    label: str
-    score: float
-    box: np.ndarray
+net = load_model(MODEL_LOCAL_PATH)
 
 render_page_header(
     icon="📷",

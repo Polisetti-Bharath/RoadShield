@@ -1,18 +1,14 @@
-import os
 import logging
+import os
 from collections import Counter
 from pathlib import Path
-from typing import List, NamedTuple
 
 import cv2
 import numpy as np
 import streamlit as st
-
-# Deep learning framework
-from ultralytics import YOLO
-
 from PIL import Image
 
+from sample_utils.model import CLASSES, Detection, load_model
 from sample_utils.report import (
     estimate_severity,
     render_authority_contact_settings,
@@ -42,29 +38,7 @@ logger = logging.getLogger(__name__)
 
 MODEL_LOCAL_PATH = ROOT / "./models/YOLOv8_Small_RDD.pt"
 
-# Session-specific caching
-# Load the model
-cache_key = "yolov8smallrdd"
-if cache_key in st.session_state:
-    net = st.session_state[cache_key]
-else:
-    net = YOLO(MODEL_LOCAL_PATH)
-    st.session_state[cache_key] = net
-
-CLASSES = [
-    "Longitudinal Crack",
-    "Transverse Crack",
-    "Alligator Crack",
-    "Potholes"
-]
-
-
-class Detection(NamedTuple):
-    class_id: int
-    label: str
-    score: float
-    box: np.ndarray
-
+net = load_model(MODEL_LOCAL_PATH)
 
 # Create temporary folder if doesn't exists
 if not os.path.exists('./temp'):
