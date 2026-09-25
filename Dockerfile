@@ -11,6 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Upgrade pip's own toolchain first -- the base image ships an old
+# setuptools that vendors a vulnerable jaraco.context/wheel (CVE-2026-23949,
+# CVE-2026-24049), which a container security scan flags regardless of what
+# requirements.txt pins.
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
 # Install Python dependencies first so this layer is cached across code changes.
 # torch/torchvision are installed explicitly (CPU build) since requirements.txt
 # leaves them unpinned on purpose for local dev flexibility (see README.md).
