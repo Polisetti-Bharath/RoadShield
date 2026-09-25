@@ -14,8 +14,12 @@ WORKDIR /app
 # Upgrade pip's own toolchain first -- the base image ships an old
 # setuptools that vendors a vulnerable jaraco.context/wheel (CVE-2026-23949,
 # CVE-2026-24049), which a container security scan flags regardless of what
-# requirements.txt pins.
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+# requirements.txt pins. Also drop the stdlib's ensurepip bundled wheels
+# (Lib/ensurepip/_bundled/*.whl): they carry their own old pinned
+# setuptools (CVE-2025-47273) but only exist to bootstrap pip in a fresh
+# venv, which this image never does.
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && rm -rf /usr/local/lib/python3.11/ensurepip/_bundled
 
 # Install Python dependencies first so this layer is cached across code changes.
 # torch/torchvision are installed explicitly (CPU build) since requirements.txt
