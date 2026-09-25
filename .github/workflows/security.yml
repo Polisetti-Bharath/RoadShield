@@ -31,6 +31,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build image
         run: docker build -t roadshield:security-scan .
+      - name: DEBUG confirm msgpack false positive source
+        run: docker run --rm --entrypoint sh roadshield:security-scan -c "grep -o '.\{80\}msgpack.\{80\}' /usr/local/lib/python3.11/site-packages/pip/_vendor/bom.cdx.json | head -5"
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
         with:
