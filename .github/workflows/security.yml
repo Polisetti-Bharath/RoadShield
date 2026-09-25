@@ -32,7 +32,7 @@ jobs:
       - name: Build image
         run: docker build -t roadshield:security-scan .
       - name: DEBUG find setuptools copies
-        run: docker run --rm roadshield:security-scan sh -c "find / -iname '*setuptools*' -not -path '*/proc/*' 2>/dev/null"
+        run: docker run --rm --entrypoint sh roadshield:security-scan -c "find / -iname '*setuptools*' -not -path '*/proc/*' 2>/dev/null"
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
         with:
