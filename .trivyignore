@@ -1,7 +1,13 @@
-# CVE-2025-47273 (setuptools path traversal): false positive. Trivy detects
-# this from pip's own bundled site-packages/pip/_vendor/bom.cdx.json, a
-# static CycloneDX SBOM describing the provenance of pip's vendored
-# libraries -- not an installed package. The only setuptools actually
-# installed in the image is 84.0.0 (fixed). Verified via a `find`/`grep`
-# across the built image: no setuptools-70.3.0 dist-info exists anywhere.
+# Both entries below are false positives from the same source: pip's own
+# bundled site-packages/pip/_vendor/bom.cdx.json, a static CycloneDX SBOM
+# describing the provenance of pip's vendored libraries at the version pip
+# was built with -- not an installed package. Verified via `find`/`grep`
+# across the built image for each: the only version actually installed is
+# the fixed one in both cases.
+
+# setuptools 70.3.0 in bom.cdx.json; installed version is 84.0.0 (fixed).
 CVE-2025-47273
+
+# msgpack 1.1.2 in bom.cdx.json; installed version is 1.2.2 (fixed, pinned
+# in requirements.txt).
+GHSA-6v7p-g79w-8964
