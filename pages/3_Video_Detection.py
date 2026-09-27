@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from collections import Counter
 from pathlib import Path
 
@@ -42,12 +43,7 @@ MODEL_LOCAL_PATH = ROOT / "./models/YOLOv8_Small_RDD.pt"
 
 net = load_model(MODEL_LOCAL_PATH)
 
-# Create temporary folder if doesn't exists
-if not os.path.exists('./temp'):
-   os.makedirs('./temp')
-
-temp_file_input = "./temp/video_input.mp4"
-temp_file_infer = "./temp/video_infer.mp4"
+TEMP_DIR = "./temp"
 
 # Processing state
 if 'processing_button' in st.session_state and st.session_state.processing_button:
@@ -69,21 +65,38 @@ def write_bytesio_to_file(filename, bytesio):
 
 
 def processVideo(video_file, score_threshold):
+    # Unique per-session filenames so concurrent users/sessions never overwrite
+    # each other's temp files.
+    os.makedirs(TEMP_DIR, exist_ok=True)
+    session_id = st.session_state.setdefault("_video_session_id", uuid.uuid4().hex)
+    temp_file_input = f"{TEMP_DIR}/video_input_{session_id}.mp4"
+    temp_file_infer = f"{TEMP_DIR}/video_infer_{session_id}.mp4"
 
     # Write the file into disk
     write_bytesio_to_file(temp_file_input, video_file)
 
     videoCapture = cv2.VideoCapture(temp_file_input)
 
-    # Check the video
-    if not videoCapture.isOpened():
-        logger.error("Could not open uploaded video file at %s", temp_file_input)
-        st.error('Error opening the video file')
-    else:
+    try:
+        # Check the video
+        if not videoCapture.isOpened():
+            logger.error("Could not open uploaded video file at %s", temp_file_input)
+            st.error('Error opening the video file. Please upload a valid .mp4.')
+            return
+
         _width = int(videoCapture.get(cv2.CAP_PROP_FRAME_WIDTH))
         _height = int(videoCapture.get(cv2.CAP_PROP_FRAME_HEIGHT))
         _fps = videoCapture.get(cv2.CAP_PROP_FPS)
         _frame_count = int(videoCapture.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        if _width <= 0 or _height <= 0 or _fps <= 0 or _frame_count <= 0:
+            logger.error(
+                "Unreadable video metadata (width=%s height=%s fps=%s frames=%s) for %s",
+                _width, _height, _fps, _frame_count, temp_file_input,
+            )
+            st.error("This video file looks corrupt or uses an unsupported format. Please try a different file.")
+            return
+
         _duration = _frame_count/_fps
         _duration_minutes = int(_duration/60)
         _duration_seconds = int(_duration%60)
@@ -199,74 +212,82 @@ def processVideo(video_file, score_threshold):
         videoCapture.release()
         cv2writer.release()
 
-    st.session_state["video_best_pothole"] = best_pothole
+        st.session_state["video_best_pothole"] = best_pothole
 
-    logger.info("Finished video: %d frame(s) processed, totals=%s", _frame_counter, dict(detection_totals))
+        logger.info("Finished video: %d frame(s) processed, totals=%s", _frame_counter, dict(detection_totals))
 
-    # Download button for the video
-    st.success("Video processed successfully!")
+        # Download button for the video
+        st.success("Video processed successfully!")
 
-    st.write("")
-    st.markdown('<p class="rs-section-label">Damage detected across the video</p>', unsafe_allow_html=True)
-    if detection_totals:
-        stat_cols = st.columns(len(detection_totals))
-        for col, (label, n) in zip(stat_cols, detection_totals.items()):
-            with col:
-                color = CLASS_COLORS.get(label, "#2563EB")
-                st.markdown(
-                    f"""
-                    <div class="rs-stat">
-                        <div class="rs-stat-value" style="color:{color}">{n}</div>
-                        <div class="rs-stat-label">{label}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-    else:
-        st.info("No damage detected across any frame at the current confidence threshold.")
+        st.write("")
+        st.markdown('<p class="rs-section-label">Damage detected across the video</p>', unsafe_allow_html=True)
+        if detection_totals:
+            stat_cols = st.columns(len(detection_totals))
+            for col, (label, n) in zip(stat_cols, detection_totals.items()):
+                with col:
+                    color = CLASS_COLORS.get(label, "#2563EB")
+                    st.markdown(
+                        f"""
+                        <div class="rs-stat">
+                            <div class="rs-stat-value" style="color:{color}">{n}</div>
+                            <div class="rs-stat-label">{label}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+        else:
+            st.info("No damage detected across any frame at the current confidence threshold.")
 
-    st.write("")
-    col1, col2 = st.columns(2)
-    with col1:
-        # Also rerun the appplication after download
-        with open(temp_file_infer, "rb") as f:
+        st.write("")
+        col1, col2 = st.columns(2)
+        with col1:
+            # Read the file into memory before the temp files are cleaned up below.
+            with open(temp_file_infer, "rb") as f:
+                video_bytes = f.read()
             st.download_button(
                 label="⬇ Download Prediction Video",
-                data=f,
+                data=video_bytes,
                 file_name="RDD_Prediction.mp4",
                 mime="video/mp4",
                 width="stretch",
             )
 
-    with col2:
-        if st.button('Restart', width="stretch", type="primary"):
-            # Rerun the application
-            st.rerun()
+        with col2:
+            if st.button('Restart', width="stretch", type="primary"):
+                # Rerun the application
+                st.rerun()
 
-    if best_pothole is not None:
-        severity_pct, severity, frame_rgb = best_pothole
-        st.write("")
-        st.markdown('<p class="rs-section-label">Report to Authorities</p>', unsafe_allow_html=True)
-        st.caption("Showing the most severe pothole frame found in this video.")
+        if best_pothole is not None:
+            severity_pct, severity, frame_rgb = best_pothole
+            st.write("")
+            st.markdown('<p class="rs-section-label">Report to Authorities</p>', unsafe_allow_html=True)
+            st.caption("Showing the most severe pothole frame found in this video.")
 
-        location = render_location_picker(key_prefix="vid")
-        if location:
-            lat, lon, address = location
-            whatsapp_number, authority_email = render_authority_contact_settings()
-            render_report_card(
-                key_prefix="vid_report",
-                label="Potholes",
-                severity=severity,
-                severity_pct=severity_pct,
-                lat=lat,
-                lon=lon,
-                address=address,
-                image=Image.fromarray(frame_rgb),
-                whatsapp_number=whatsapp_number,
-                authority_email=authority_email,
-            )
-        else:
-            st.info("Share your location above to enable reporting.")
+            location = render_location_picker(key_prefix="vid")
+            if location:
+                lat, lon, address = location
+                whatsapp_number, authority_email = render_authority_contact_settings()
+                render_report_card(
+                    key_prefix="vid_report",
+                    label="Potholes",
+                    severity=severity,
+                    severity_pct=severity_pct,
+                    lat=lat,
+                    lon=lon,
+                    address=address,
+                    image=Image.fromarray(frame_rgb),
+                    whatsapp_number=whatsapp_number,
+                    authority_email=authority_email,
+                )
+            else:
+                st.info("Share your location above to enable reporting.")
+    finally:
+        videoCapture.release()
+        for temp_path in (temp_file_input, temp_file_infer):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
 
 render_page_header(

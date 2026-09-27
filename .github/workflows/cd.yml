@@ -1,5 +1,12 @@
 name: CD
 
+# Gated release pipeline: only reaches GHCR if lint, tests, the dependency
+# scan, and the container scan all pass first. ci.yml/security.yml duplicate
+# the lint/test/scan job bodies for PR-time feedback and the weekly schedule
+# respectively -- GitHub Actions has no `needs:` across separate workflow
+# files, so this small duplication is the simple way to get an enforced gate
+# on the one workflow that actually publishes an image.
+
 on:
   push:
     branches: [main]
@@ -11,8 +18,96 @@ permissions:
   packages: write
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install ruff
+        run: pip install ruff==0.14.4
+      - name: Run ruff
+        run: ruff check .
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Sanity check imports
+        run: python -c "import torch, torchvision, ultralytics; from sample_utils.model import load_model; from sample_utils.report import estimate_severity; print(torch.__version__, torchvision.__version__)"
+      - name: Run tests
+        run: |
+          set +e
+          python -m pytest tests/ -v --tb=short 2>&1 | tee pytest_output.txt
+          exit_code=${PIPESTATUS[0]}
+          if [ $exit_code -ne 0 ]; then
+            ESCAPED=$(tail -c 3000 pytest_output.txt | awk '{printf "%s%%0A", $0}')
+            echo "::error::$ESCAPED"
+          fi
+          exit $exit_code
+
+  dependency-scan:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Audit Python dependencies
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: requirements.txt requirements-dev.txt
+          ignore-vulns: |
+            # add PYSEC-/GHSA- IDs here with a comment explaining why, if a
+            # finding is a false positive or has no available fix yet
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: dependency-scan
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t roadshield:release .
+      - name: Save image for the scan/push jobs
+        run: docker save roadshield:release -o /tmp/roadshield-release.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: roadshield-release-image
+          path: /tmp/roadshield-release.tar
+          retention-days: 1
+
+  container-scan:
+    runs-on: ubuntu-latest
+    needs: docker-build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: roadshield-release-image
+          path: /tmp
+      - name: Load image
+        run: docker load -i /tmp/roadshield-release.tar
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: roadshield:release
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+
   build-and-push:
     runs-on: ubuntu-latest
+    needs: container-scan
     steps:
       - uses: actions/checkout@v4
 

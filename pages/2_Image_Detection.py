@@ -59,10 +59,16 @@ if image_file is not None:
 
     # Load the image
     image_bytes = image_file.getvalue()
-    image = Image.open(image_file)
+    try:
+        image = Image.open(image_file)
+        image.load()
+        _image = np.array(image.convert("RGB"))
+    except Exception:
+        logger.exception("Failed to decode uploaded image %s", image_file.name)
+        st.error("Couldn't read this file as an image. Please upload a valid PNG or JPG.")
+        st.stop()
 
     # Perform inference
-    _image = np.array(image)
     h_ori = _image.shape[0]
     w_ori = _image.shape[1]
 
