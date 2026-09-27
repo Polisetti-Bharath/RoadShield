@@ -45,12 +45,6 @@ net = load_model(MODEL_LOCAL_PATH)
 
 TEMP_DIR = "./temp"
 
-# Processing state
-if 'processing_button' in st.session_state and st.session_state.processing_button:
-    st.session_state.runningInference = True
-else:
-    st.session_state.runningInference = False
-
 
 # func to save BytesIO on a drive
 def write_bytesio_to_file(filename, bytesio):
@@ -297,21 +291,17 @@ render_page_header(
 )
 
 with st.container(key="rs-upload-card"):
-    video_file = st.file_uploader("Upload a video (.mp4)", type=".mp4", disabled=st.session_state.runningInference)
+    video_file = st.file_uploader("Upload a video (.mp4)", type=".mp4")
     st.caption("There is a 1GB limit for video size. Resize or trim your video if it's larger than that.")
 
     score_threshold = st.slider(
         "Confidence Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05,
-        disabled=st.session_state.runningInference,
     )
     st.caption("Lower the threshold if damage isn't being detected. Raise it if you're seeing false positives.")
 
 if video_file is not None:
     st.write("")
-    if st.button(
-        '▶ Process Video', width="stretch", disabled=st.session_state.runningInference,
-        type="primary", key="processing_button",
-    ):
+    if st.button('▶ Process Video', width="stretch", type="primary", key="processing_button"):
         st.warning(f"Processing {video_file.name}...")
         processVideo(video_file, score_threshold)
 
