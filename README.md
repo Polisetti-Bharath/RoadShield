@@ -4,11 +4,12 @@ This project is road damage detection applications that designed to enhance road
 
 ## Screenshots
 
-<!-- TODO: add updated screenshots of the current UI here, e.g.:
-![Home](resource/screenshot_home.png)
-![Image Detection](resource/screenshot_image.png)
-![Video Detection](resource/screenshot_video.png)
--->
+<p align="center">
+    <img src="resource/RDD_Image_Example.gif" width="45%" alt="Image detection demo">
+    <img src="resource/RDD_Video_Example.gif" width="45%" alt="Video detection demo">
+</p>
+
+*Left: image detection. Right: video detection. See [Evaluation Result](#evaluation-result) below for training metrics.*
 
 
 The project is powered by YOLOv8 deep learning model that trained on Crowdsensing-based Road Damage Detection Challenge 2022 dataset.
