@@ -37,3 +37,11 @@ runs/
 
 # Local-only phase tracking (not meant for git)
 PHASES.local.md
+
+# Graphify output (machine-specific, can be rebuilt anytime)
+graphify-out/
+
+# Claude Code personal/local settings
+.claude/settings.local.json
+
+.claude/
