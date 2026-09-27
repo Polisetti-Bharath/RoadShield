@@ -1,5 +1,6 @@
 import streamlit as st
 
+from sample_utils.logging_config import configure_logging
 from sample_utils.ui import (
     inject_base_css,
     render_class_legend,
@@ -15,6 +16,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+configure_logging()
 inject_base_css()
 
 render_hero(

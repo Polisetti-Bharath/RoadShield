@@ -10,6 +10,7 @@ from PIL import Image
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
 
 from sample_utils.get_STUNServer import getSTUNServer
+from sample_utils.logging_config import configure_logging
 from sample_utils.model import CLASSES, Detection, load_model
 from sample_utils.report import (
     estimate_severity,
@@ -30,6 +31,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+configure_logging()
 inject_base_css()
 
 HERE = Path(__file__).parent
@@ -42,6 +44,7 @@ MODEL_LOCAL_PATH = ROOT / "./models/YOLOv8_Small_RDD.pt"
 # STUN Server
 STUN_STRING = "stun:" + str(getSTUNServer())
 STUN_SERVER = [{"urls": [STUN_STRING]}]
+logger.info("Using STUN server: %s", STUN_STRING)
 
 net = load_model(MODEL_LOCAL_PATH)
 
@@ -66,7 +69,11 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
     h_ori = image.shape[0]
     w_ori = image.shape[1]
     image_resized = cv2.resize(image, (640, 640), interpolation = cv2.INTER_AREA)
-    results = net.predict(image_resized, conf=score_threshold)
+    try:
+        results = net.predict(image_resized, conf=score_threshold)
+    except Exception:
+        logger.exception("Inference failed on a realtime frame, passing it through unannotated")
+        return frame
 
     # Save the results on the queue
     for result in results:

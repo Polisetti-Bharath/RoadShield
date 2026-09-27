@@ -34,3 +34,6 @@ runs/
 # Test / lint caches
 .pytest_cache/
 .ruff_cache/
+
+# Local-only phase tracking (not meant for git)
+PHASES.local.md

@@ -8,6 +8,7 @@ import numpy as np
 import streamlit as st
 from PIL import Image
 
+from sample_utils.logging_config import configure_logging
 from sample_utils.model import CLASSES, Detection, load_model
 from sample_utils.report import (
     estimate_severity,
@@ -31,6 +32,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+configure_logging()
 inject_base_css()
 
 HERE = Path(__file__).parent
@@ -66,7 +68,12 @@ if image_file is not None:
 
     image_resized = cv2.resize(_image, (640, 640), interpolation=cv2.INTER_AREA)
     with st.spinner("Running detection..."):
-        results = net.predict(image_resized, conf=score_threshold)
+        try:
+            results = net.predict(image_resized, conf=score_threshold)
+        except Exception:
+            logger.exception("Image inference failed for %s", image_file.name)
+            st.error("Detection failed on this image. Please try a different file.")
+            st.stop()
 
     # Save the results
     detections = []
@@ -82,6 +89,7 @@ if image_file is not None:
             for _box in boxes
         ]
 
+    logger.info("Image %s: %d detection(s)", image_file.name, len(detections))
     annotated_frame = results[0].plot()
     _image_pred = cv2.resize(annotated_frame, (w_ori, h_ori), interpolation=cv2.INTER_AREA)
 

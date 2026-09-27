@@ -8,6 +8,7 @@ import numpy as np
 import streamlit as st
 from PIL import Image
 
+from sample_utils.logging_config import configure_logging
 from sample_utils.model import CLASSES, Detection, load_model
 from sample_utils.report import (
     estimate_severity,
@@ -29,6 +30,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+configure_logging()
 inject_base_css()
 
 HERE = Path(__file__).parent
@@ -75,6 +77,7 @@ def processVideo(video_file, score_threshold):
 
     # Check the video
     if not videoCapture.isOpened():
+        logger.error("Could not open uploaded video file at %s", temp_file_input)
         st.error('Error opening the video file')
     else:
         _width = int(videoCapture.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -85,6 +88,11 @@ def processVideo(video_file, score_threshold):
         _duration_minutes = int(_duration/60)
         _duration_seconds = int(_duration%60)
         _duration_strings = str(_duration_minutes) + ":" + str(_duration_seconds).zfill(2)
+
+        logger.info(
+            "Processing video: %dx%d, %.1f fps, %d frames",
+            _width, _height, _fps, _frame_count,
+        )
 
         info_cols = st.columns(3)
         with info_cols[0]:
@@ -137,7 +145,13 @@ def processVideo(video_file, score_threshold):
                 _image = np.array(frame)
 
                 image_resized = cv2.resize(_image, (640, 640), interpolation = cv2.INTER_AREA)
-                results = net.predict(image_resized, conf=score_threshold)
+                try:
+                    results = net.predict(image_resized, conf=score_threshold)
+                except Exception:
+                    logger.exception("Inference failed on frame %d, aborting video processing", _frame_counter)
+                    st.error(f"Detection failed on frame {_frame_counter}. Processing stopped.")
+                    inferenceBar.empty()
+                    break
 
                 # Save the results
                 for result in results:
@@ -186,6 +200,8 @@ def processVideo(video_file, score_threshold):
         cv2writer.release()
 
     st.session_state["video_best_pothole"] = best_pothole
+
+    logger.info("Finished video: %d frame(s) processed, totals=%s", _frame_counter, dict(detection_totals))
 
     # Download button for the video
     st.success("Video processed successfully!")
