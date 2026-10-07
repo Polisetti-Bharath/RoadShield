@@ -79,7 +79,7 @@ jobs:
         run: docker build -t roadshield:release .
       - name: Save image for the scan/push jobs
         run: docker save roadshield:release -o /tmp/roadshield-release.tar
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: roadshield-release-image
           path: /tmp/roadshield-release.tar
