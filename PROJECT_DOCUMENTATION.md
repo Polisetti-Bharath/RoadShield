@@ -26,11 +26,11 @@
    * [6.5 Model Evaluation Metrics & Accuracy Results](#65-model-evaluation-metrics--accuracy-results)
 7. [Detailed File-by-File Code Breakdown](#7-detailed-file-by-file-code-breakdown)
    * [7.1 `Home.py`](#71-homepy)
-   * [7.2 `pages/1_Realtime Detection.py`](#72-pages1_realtime-detectionpy)
-   * [7.3 `pages/2_Image Detection.py`](#73-pages2_image-detectionpy)
-   * [7.4 `pages/3_Video Detection.py`](#74-pages3_video-detectionpy)
+   * [7.2 `pages/1_Realtime_Detection.py`](#72-pages1_realtime_detectionpy)
+   * [7.3 `pages/2_Image_Detection.py`](#73-pages2_image_detectionpy)
+   * [7.4 `pages/3_Video_Detection.py`](#74-pages3_video_detectionpy)
    * [7.5 `sample_utils/get_STUNServer.py`](#75-sample_utilsget_stunserverpy)
-   * [7.6 `sample_utils/download.py`](#76-sample_utilsdownloadpy)
+   * [7.6 `sample_utils/model.py` & `sample_utils/logging_config.py`](#76-sample_utilsmodelpy--sample_utilslogging_configpy)
    * [7.7 `.streamlit/config.toml`](#77-streamlitconfigtoml)
    * [7.8 Training Notebooks (`0_PrepareDatasetYOLOv8.ipynb`, `1_TrainingYOLOv8.ipynb`, `2_EvaluationTesting.ipynb`)](#78-training-notebooks)
 8. [Installation & User Guide](#8-installation--user-guide)
@@ -179,9 +179,9 @@ flowchart TD
     User([User Browser Interface]) -->|Selects Mode| Sidebar[Streamlit Page Router]
 
     Sidebar -->|Home| Page0[Home.py Landing Page]
-    Sidebar -->|Mode 1| Page1[pages/1_Realtime Detection.py]
-    Sidebar -->|Mode 2| Page2[pages/2_Image Detection.py]
-    Sidebar -->|Mode 3| Page3[pages/3_Video Detection.py]
+    Sidebar -->|Mode 1| Page1[pages/1_Realtime_Detection.py]
+    Sidebar -->|Mode 2| Page2[pages/2_Image_Detection.py]
+    Sidebar -->|Mode 3| Page3[pages/3_Video_Detection.py]
 
     subgraph Deep Learning Engine
         Weights[models/YOLOv8_Small_RDD.pt]
@@ -389,26 +389,27 @@ Evaluated using `2_EvaluationTesting.ipynb` on an NVIDIA GeForce RTX 2060 GPU ac
 
 ### 7.1 `Home.py`
 The landing page and root entrypoint for the Streamlit application.
-* `st.set_page_config(...)`: Sets browser tab title to "Road Damage Detections Apps" and icon to `🛣️`.
-* `st.image("./resource/banner.png")`: Displays top banner image.
-* `st.markdown(...)`: Renders markdown text explaining the project background, model capabilities, target classes, and sidebar navigation instructions.
+* `st.set_page_config(...)`: Sets browser tab title to "RoadShield - Road Damage Detection" and icon to `🛣️`.
+* `inject_base_css()` (from `sample_utils/ui.py`): Injects the shared dark-glass theme, fonts, and component styles used across all pages.
+* `render_hero(...)`: Renders the hero banner with badge, title, and description.
+* Three `st.columns` feature cards linking the concept of Realtime, Image, and Video detection modes.
+* `render_class_legend()`: Renders the damage-type color legend (Longitudinal/Transverse/Alligator Crack, Potholes).
+* An `st.expander("About this project")` with dataset/model attribution, followed by `render_footer()`.
 
 ---
 
-### 7.2 `pages/1_Realtime Detection.py`
+### 7.2 `pages/1_Realtime_Detection.py`
 Handles live webcam streaming and real-time bounding box rendering.
 
 #### Key Code Components:
 * **Model Loading & Session State Caching**:
   ```python
-  cache_key = "yolov8smallrdd"
-  if cache_key in st.session_state:
-      net = st.session_state[cache_key]
-  else:
-      net = YOLO(MODEL_LOCAL_PATH)
-      st.session_state[cache_key] = net
+  net = load_model(MODEL_LOCAL_PATH)
   ```
-  *Prevents re-instantiating the PyTorch model object during Streamlit reruns.*
+  Shared across all three pages via `sample_utils/model.load_model()` (see
+  [7.6](#76-sample_utilsmodelpy--sample_utilslogging_configpy)), which caches
+  the YOLO instance in `st.session_state` so it's only instantiated once per
+  session. Loading now logs and re-raises on failure instead of failing silently.
 
 * **Thread-Safe Results Queue**:
   ```python
@@ -424,7 +425,7 @@ Handles live webcam streaming and real-time bounding box rendering.
 
 ---
 
-### 7.3 `pages/2_Image Detection.py`
+### 7.3 `pages/2_Image_Detection.py`
 Handles static image file upload and prediction download.
 
 #### Key Code Components:
@@ -436,15 +437,19 @@ Handles static image file upload and prediction download.
 
 ---
 
-### 7.4 `pages/3_Video Detection.py`
+### 7.4 `pages/3_Video_Detection.py`
 Handles offline video file processing frame-by-frame.
 
 #### Key Code Components:
-* `write_bytesio_to_file(temp_file_input, video_file)`: Writes uploaded video stream to disk (`./temp/video_input.mp4`).
-* `cv2.VideoCapture(temp_file_input)`: Opens input video stream and extracts metadata (`_width`, `_height`, `_fps`, `_frame_count`).
+* **Per-session temp files**: `temp_file_input`/`temp_file_infer` are named
+  `./temp/video_input_<session_id>.mp4` / `video_infer_<session_id>.mp4`,
+  where `session_id` is a UUID cached in `st.session_state`. This keeps
+  concurrent users/sessions from overwriting each other's files.
+* `write_bytesio_to_file(temp_file_input, video_file)`: Writes the uploaded video stream to disk.
+* `cv2.VideoCapture(temp_file_input)`: Opens the input video and extracts metadata (`_width`, `_height`, `_fps`, `_frame_count`). If the file fails to open, or any of those four values comes back zero/negative (corrupt or unsupported file), processing stops with a user-facing error instead of crashing or dividing by zero on duration.
 * `cv2.VideoWriter(temp_file_infer, fourcc_mp4, _fps, (_width, _height))`: Initializes output video encoder using `'mp4v'` FourCC codec.
-* **Frame Loop**: Loops over frames, executes YOLO prediction, writes annotated frame to disk via `cv2writer.write(_out_frame)`, updates live preview image container (`imageLocation`), and updates `st.progress` bar.
-* `st.download_button(...)`: Exposes completed `./temp/video_infer.mp4` video for single-click browser download.
+* **Frame Loop**: Loops over frames, executes YOLO prediction (wrapped in try/except — a failed frame stops processing cleanly instead of crashing the page), writes annotated frame to disk via `cv2writer.write(_out_frame)`, updates live preview image container (`imageLocation`), and updates `st.progress` bar.
+* `st.download_button(...)`: The inferred video's bytes are read into memory before rendering the button, then the whole function's `finally` block deletes both temp files — so they don't accumulate on disk across runs.
 
 ---
 
@@ -459,10 +464,24 @@ Dynamic STUN server location utility for WebRTC.
    $$\text{Distance} = \sqrt{(\text{Lat}_{user} - \text{Lat}_{stun})^2 + (\text{Lon}_{user} - \text{Lon}_{stun})^2}$$
 5. Returns the nearest `IP:PORT` string to guarantee low-latency NAT traversal.
 
+If any of the three HTTP calls above fails (network issue, one of the
+services being down, etc.), the whole lookup is wrapped in a try/except that
+logs the failure and falls back to a public STUN server
+(`stun.l.google.com:19302`) instead of crashing the Realtime Detection page.
+
 ---
 
-### 7.6 `sample_utils/download.py`
-Utility to download remote model weights with a Streamlit progress bar (`st.progress`) tracking downloaded megabytes against total content length.
+### 7.6 `sample_utils/model.py` & `sample_utils/logging_config.py`
+Shared model loading and logging setup used by `Home.py` and all three pages.
+
+* **`load_model(model_path)`**: Returns the cached `YOLO` instance from
+  `st.session_state` if one exists; otherwise instantiates it, logging the
+  load and re-raising (with a logged traceback) if it fails.
+* **`configure_logging()`**: Central `logging.basicConfig()` call, gated so
+  it's a no-op if the root logger already has handlers (Streamlit re-runs
+  each page script in the same process). Reads its level from the
+  `LOG_LEVEL` environment variable (default `INFO`). Called once at the top
+  of `Home.py` and every page.
 
 ---
 
@@ -473,7 +492,7 @@ Streamlit server configuration file:
 maxUploadSize = 1000 # Allows uploading video files up to 1000 Megabytes (1GB)
 
 [theme]
-base = "light" # Enforces standard light theme styling
+base = "dark" # Enforces the dark glass theme used by sample_utils/ui.py
 ```
 
 ---
@@ -487,27 +506,19 @@ base = "light" # Enforces standard light theme styling
 
 ## 8. Installation & User Guide
 
-### Step 1: Environment Setup
+See `README.md` for the up-to-date, step-by-step local setup instructions (using `uv`, Python 3.10/3.11, and the CUDA/CPU `torch` install choice). The short version:
+
 ```bash
-# Clone repository and enter folder
-cd RoadDamageDetection-main
+# From the RoadShield/ project root
+uv venv --python 3.10 .venv
+source .venv/bin/activate        # on Windows: .venv\Scripts\activate
 
-# Create isolated Python 3.8 environment
-conda create -n rdd python=3.8 -y
-conda activate rdd
-```
+# Pick ONE: CUDA build (NVIDIA GPU) or CPU-only build
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# uv pip install torch torchvision   # CPU-only
 
-### Step 2: Install PyTorch & Dependencies
-```bash
-# Install PyTorch with CUDA 11.8 support
-conda install pytorch==2.0.0 torchvision==0.15.0 torchaudio==2.0.0 pytorch-cuda=11.8 -c pytorch -c nvidia
+uv pip install -r requirements.txt
 
-# Install Python requirements
-pip install -r requirements.txt
-```
-
-### Step 3: Run the Application
-```bash
 streamlit run Home.py
 ```
 Open your browser and navigate to `http://localhost:8501`.

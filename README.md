@@ -4,11 +4,12 @@ This project is road damage detection applications that designed to enhance road
 
 ## Screenshots
 
-<!-- TODO: add updated screenshots of the current UI here, e.g.:
-![Home](resource/screenshot_home.png)
-![Image Detection](resource/screenshot_image.png)
-![Video Detection](resource/screenshot_video.png)
--->
+<p align="center">
+    <img src="resource/RDD_Image_Example.gif" width="45%" alt="Image detection demo">
+    <img src="resource/RDD_Video_Example.gif" width="45%" alt="Video detection demo">
+</p>
+
+*Left: image detection. Right: video detection. See [Evaluation Result](#evaluation-result) below for training metrics.*
 
 
 The project is powered by YOLOv8 deep learning model that trained on Crowdsensing-based Road Damage Detection Challenge 2022 dataset.
@@ -58,6 +59,31 @@ pip install -r requirements.txt
 streamlit run Home.py
 ```
 </details>
+
+## Running with Docker
+
+```bash
+docker compose up --build
+```
+Then open `http://localhost:8501`. The image runs on CPU (no GPU passthrough) and bundles the inference model weights; the training notebooks/dataset are not included in the image.
+
+### Pre-built image
+
+On every push to `main` (or a `v*` tag), GitHub Actions builds and publishes the image to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/polisetti-bharath/roadshield:latest
+```
+
+This requires the repo's Settings → Actions → General → Workflow permissions to be set to "Read and write permissions" (one-time, admin-only setup) so the CI token can push packages.
+
+## Security Scanning
+
+A `Security` GitHub Actions workflow runs on every push/PR to `main`/`ASE`, weekly on a schedule, and on demand:
+- **Dependency scan**: [`pip-audit`](https://github.com/pypa/pip-audit) checks `requirements.txt`/`requirements-dev.txt` against known vulnerability databases.
+- **Container scan**: [Trivy](https://github.com/aquasecurity/trivy) builds and scans the Docker image, failing the job on unfixed CRITICAL/HIGH findings.
+
+[Dependabot](.github/dependabot.yml) opens weekly PRs for outdated pip, GitHub Actions, and Docker base-image dependencies.
 
 ## Training
 

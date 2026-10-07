@@ -71,19 +71,19 @@ flowchart TD
 ```
 
 ### 3.1 The Three Inspection Modes
-1. **Live Realtime Detection (`pages/1_Realtime Detection.py`)**:
+1. **Live Realtime Detection (`pages/1_Realtime_Detection.py`)**:
    - Uses `streamlit-webrtc` to stream browser video over WebRTC with ultra-low latency.
    - An `av.VideoFrame` callback transforms each frame: converts the raw video packet to a BGR NumPy array, passes it to the cached `YOLO` instance, draws color-coded bounding boxes and labels using OpenCV, and emits the annotated frame back to the browser.
-   - Leverages STUN (Session Traversal Utilities for NAT) servers (`stun.l.google.com:19302`) to ensure connectivity even across firewalls and cellular networks.
+   - Leverages STUN (Session Traversal Utilities for NAT) servers (`stun.l.google.com:19302`) with fallback logic to ensure connectivity even across firewalls and cellular networks.
    - Provides live detection counters in a table beneath the video player.
 
-2. **Static Image Detection (`pages/2_Image Detection.py`)**:
-   - Users upload standard road photos (e.g., captured by pedestrians or municipal field workers).
+2. **Static Image Detection (`pages/2_Image_Detection.py`)**:
+   - Users upload standard road photos (e.g., captured by pedestrians or municipal field workers) or test with built-in sample images.
    - Automatically parses **EXIF metadata** using `piexif` to extract GPS coordinates embedded by smartphones.
    - Lets users adjust a real-time **Confidence Threshold Slider** (0.05 to 1.00) to filter detections.
    - Runs inference, overlays bounding boxes with custom class colors, and outputs side-by-side or overlaid visuals with class frequency counters.
 
-3. **Offline Video Detection (`pages/3_Video Detection.py`)**:
+3. **Offline Video Detection (`pages/3_Video_Detection.py`)**:
    - Designed for municipal vehicles (garbage trucks, buses, patrol vehicles) carrying dashcams.
    - Accepts uploaded `.mp4` drive-through recordings.
    - Decodes video frame-by-frame using OpenCV `cv2.VideoCapture`.
@@ -193,17 +193,17 @@ To ensure an equal, clearly delineated, and professional distribution of work fo
      - Designed a custom CSS styling layer injected dynamically into Streamlit (`inject_base_css()`).
      - Built modern glassmorphic cards (`.rs-feature-card`), interactive glowing borders (`glow-indigo`, `glow-violet`, `glow-pink`), responsive metric grids, and custom typography using the Inter font family.
      - Created color-coded UI badges (`CLASS_COLORS`) matching the 4 road distress categories for consistent visual hierarchy across pages.
-  3. **Real-Time WebRTC Streaming (`pages/1_Realtime Detection.py`)**:
+  3. **Real-Time WebRTC Streaming (`pages/1_Realtime_Detection.py`)**:
      - Integrated `streamlit-webrtc` and `PyAV` to stream client webcam frames to the Python backend without server browser overhead.
      - Implemented the custom `VideoTransformer` / callback function that performs frame unpacking, runs YOLO inference per frame, overlays OpenCV visual annotations, and sends the processed frame back to the client at interactive frame rates.
-  4. **Image & Video Media Pipelines (`pages/2_Image Detection.py`, `pages/3_Video Detection.py`)**:
+  4. **Image & Video Media Pipelines (`pages/2_Image_Detection.py`, `pages/3_Video_Detection.py`)**:
      - Implemented image upload, PIL format conversion, OpenCV bounding box rendering with alpha blending, and dynamic confidence threshold filtering.
      - Built the offline batch video processing engine using OpenCV `VideoCapture` and `VideoWriter`, including progress tracking, frame counting, elapsed time calculation, and final annotated video rendering.
 * **Specific Files Owned**:
   - `Home.py`
-  - `pages/1_Realtime Detection.py`
-  - `pages/2_Image Detection.py`
-  - `pages/3_Video Detection.py`
+  - `pages/1_Realtime_Detection.py`
+  - `pages/2_Image_Detection.py`
+  - `pages/3_Video_Detection.py`
   - `sample_utils/ui.py`
   - `.streamlit/config.toml`
 * **Viva / Defense Talking Points**:
@@ -247,24 +247,38 @@ To ensure an equal, clearly delineated, and professional distribution of work fo
 RoadShield/
 ├── Home.py                             # Main Streamlit landing page & navigation
 ├── pages/
-│   ├── 1_Realtime Detection.py        # WebRTC live webcam streaming & inference
-│   ├── 2_Image Detection.py           # Photo upload, EXIF GPS reading & detection
-│   └── 3_Video Detection.py           # Batch offline MP4 video processing
+│   ├── 1_Realtime_Detection.py        # WebRTC live webcam streaming & inference
+│   ├── 2_Image_Detection.py           # Photo upload, EXIF GPS reading & detection
+│   └── 3_Video_Detection.py           # Batch offline MP4 video processing
 ├── sample_utils/
 │   ├── ui.py                          # Modern CSS design system, cards, colors & badges
-│   ├── report.py                      # EXIF GPS, Nominatim geocoding, severity & PDF engine
-│   ├── get_STUNServer.py              # STUN server configuration for WebRTC NAT traversal
-│   └── download.py                    # Sample asset download utility
+│   ├── report.py                      # EXIF GPS, reverse geocoding, severity & PDF engine
+│   ├── model.py                       # Deduplicated YOLO model loader with caching
+│   ├── logging_config.py              # Structured application logging
+│   └── get_STUNServer.py              # STUN server configuration for WebRTC NAT traversal
 ├── models/
 │   └── YOLOv8_Small_RDD.pt            # Production trained weights (CRDDC2022 Japan + India)
+├── tests/                             # Automated test suite (Pytest)
+│   ├── test_get_STUNServer.py
+│   ├── test_logging_config.py
+│   ├── test_model.py
+│   └── test_report.py
+├── .github/workflows/                  # Enterprise CI/CD pipelines
+│   ├── ci.yml                         # Lint (ruff), tests (pytest), image build
+│   ├── cd.yml                         # Gated release pipeline & GHCR publishing
+│   ├── security.yml                   # Scheduled pip-audit & Trivy vulnerability scans
+│   └── dependabot.yml                 # Automated weekly dependency updates
 ├── training/
 │   ├── 0_PrepareDatasetYOLOv8.ipynb   # Pascal VOC XML to YOLO TXT dataset preprocessing
 │   ├── 1_TrainingYOLOv8.ipynb         # Ultralytics YOLOv8s training script
 │   ├── 2_EvaluationTesting.ipynb      # Metrics calculation & test inference
-│   ├── yolov8n.pt                     # Base Nano weights
 │   └── yolov8s.pt                     # Base Small weights
-├── resource/                          # Evaluation plots, PR curves, confusion matrix
-├── requirements.txt                   # Pinned dependency manifest
+├── resource/                          # Evaluation plots, sample images, GIFs
+├── Dockerfile                         # Production container definition
+├── docker-compose.yml                 # Container orchestration
+├── pyproject.toml                     # Ruff linter and Pytest configuration
+├── requirements.txt                   # Production dependencies with security pins
+├── requirements-dev.txt               # Development & test dependencies
 ├── packages.txt                       # Linux OS-level dependencies (libgl1)
 └── pbl.md                             # Comprehensive PBL Documentation (This File)
 ```
@@ -300,14 +314,14 @@ streamlit run Home.py
 1. **Landing Page (`Home.py`)**:
    - Open browser at `http://localhost:8501`.
    - Point out the 4 damage categories and modern dark-mode card interface.
-2. **Image Detection Demo (`pages/2_Image Detection.py`)**:
-   - Upload any sample road image.
+2. **Image Detection Demo (`pages/2_Image_Detection.py`)**:
+   - Upload any sample road image or click one of the preset sample damage buttons.
    - Adjust the **Confidence Threshold** slider to show how predictions filter out noise.
    - Demonstrate the **Severity Rating** (Low/Medium/High).
    - Show the **Civic Action Card**: show how the address is resolved from GPS, click **"Download PDF Report"** to show the generated grievance document, and show the WhatsApp / Email links.
-3. **Realtime Detection Demo (`pages/1_Realtime Detection.py`)**:
+3. **Realtime Detection Demo (`pages/1_Realtime_Detection.py`)**:
    - Click "START" on the WebRTC camera widget to show live bounding boxes and detection counts.
-4. **Video Processing Demo (`pages/3_Video Detection.py`)**:
+4. **Video Processing Demo (`pages/3_Video_Detection.py`)**:
    - Upload a road clip to show frame-by-frame progress and playback of the annotated result.
 
 ---

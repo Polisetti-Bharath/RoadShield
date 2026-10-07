@@ -1,20 +1,17 @@
 import logging
 import queue
 from pathlib import Path
-from typing import List, NamedTuple
+from typing import List
 
 import av
 import cv2
-import numpy as np
 import streamlit as st
+from PIL import Image
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
 
-# Deep learning framework
-from ultralytics import YOLO
-
-from PIL import Image
-
 from sample_utils.get_STUNServer import getSTUNServer
+from sample_utils.logging_config import configure_logging
+from sample_utils.model import CLASSES, Detection, load_model
 from sample_utils.report import (
     estimate_severity,
     render_authority_contact_settings,
@@ -31,9 +28,10 @@ st.set_page_config(
     page_title="Realtime Detection - RoadShield",
     page_icon="📷",
     layout="centered",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
+configure_logging()
 inject_base_css()
 
 HERE = Path(__file__).parent
@@ -43,35 +41,16 @@ logger = logging.getLogger(__name__)
 
 MODEL_LOCAL_PATH = ROOT / "models" / "YOLOv8_Small_RDD.pt"
 
-# STUN Server
+# STUN Server configuration with fallback
 try:
     STUN_STRING = "stun:" + str(getSTUNServer())
     STUN_SERVER = [{"urls": [STUN_STRING]}]
 except Exception:
-    STUN_SERVER = [{"urls": ["stun:stun.l.google.com:19302"]}]
+    STUN_STRING = "stun:stun.l.google.com:19302"
+    STUN_SERVER = [{"urls": [STUN_STRING]}]
+logger.info("Using STUN server: %s", STUN_STRING)
 
-
-@st.cache_resource
-def load_yolo_model(model_path: str):
-    return YOLO(model_path)
-
-
-net = load_yolo_model(str(MODEL_LOCAL_PATH))
-
-CLASSES = [
-    "Longitudinal Crack",
-    "Transverse Crack",
-    "Alligator Crack",
-    "Potholes"
-]
-
-
-class Detection(NamedTuple):
-    class_id: int
-    label: str
-    score: float
-    box: np.ndarray
-
+net = load_model(MODEL_LOCAL_PATH)
 
 render_page_header(
     icon="📷",
@@ -85,9 +64,12 @@ score_threshold = st.slider(
     max_value=1.0,
     value=0.25,
     step=0.05,
-    help="Default is 0.25. Lower if damage isn't being detected; raise if you see false positives."
+    help="Default is 0.25. Lower if damage isn't being detected; raise if you see false positives.",
 )
-st.caption("Default is 0.25. Cracks and potholes in live camera feeds often have lower confidence scores. Lower the slider if damage is not detected.")
+st.caption(
+    "Default is 0.25. Cracks and potholes in live camera feeds often have lower confidence scores. "
+    "Lower the slider if damage is not detected."
+)
 
 # Holds recent detections for UI display
 result_queue: "queue.Queue[List[Detection]]" = queue.Queue(maxsize=10)
@@ -99,8 +81,12 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
     image = frame.to_ndarray(format="bgr24")
     h_ori, w_ori = image.shape[:2]
 
-    # Run inference directly on native frame preserving aspect ratio
-    results = net.predict(image, conf=score_threshold, imgsz=640, verbose=False)
+    try:
+        # Run inference directly on native frame preserving aspect ratio
+        results = net.predict(image, conf=score_threshold, imgsz=640, verbose=False)
+    except Exception:
+        logger.exception("Inference failed on a realtime frame, passing it through unannotated")
+        return frame
 
     # Extract detections
     detections: List[Detection] = []
@@ -135,11 +121,13 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
                 pothole_snapshot_queue.get_nowait()
             except queue.Empty:
                 pass
+            except Exception:
+                pass
         try:
             pothole_snapshot_queue.put_nowait(
                 (detections, cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB), w_ori, h_ori)
             )
-        except queue.Full:
+        except (queue.Full, Exception):
             pass
 
     return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
@@ -155,7 +143,7 @@ webrtc_ctx = webrtc_streamer(
         "video": {
             "width": {"ideal": 1280, "min": 640},
         },
-        "audio": False
+        "audio": False,
     },
     async_processing=True,
 )
@@ -193,8 +181,7 @@ if snapshot:
     worst = max(dets, key=lambda d: estimate_severity(d.box, f_w, f_h)[1])
     severity, severity_pct = estimate_severity(worst.box, f_w, f_h)
 
-    location = render_location_picker(key_prefix="rt")
-    lat, lon, address = location if location else (12.971599, 77.594566, "Bengaluru, Karnataka, India")
+    lat, lon, address = render_location_picker(key_prefix="rt")
 
     whatsapp_number, authority_email = render_authority_contact_settings()
     render_report_card(

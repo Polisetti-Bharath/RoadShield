@@ -2,16 +2,14 @@ import logging
 from collections import Counter
 from io import BytesIO
 from pathlib import Path
-from typing import NamedTuple
 
 import cv2
 import numpy as np
 import streamlit as st
 from PIL import Image, ImageOps
 
-# Deep learning framework
-from ultralytics import YOLO
-
+from sample_utils.logging_config import configure_logging
+from sample_utils.model import CLASSES, Detection, load_model
 from sample_utils.report import (
     estimate_severity,
     get_gps_from_exif,
@@ -34,6 +32,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+configure_logging()
 inject_base_css()
 
 HERE = Path(__file__).parent
@@ -43,28 +42,7 @@ logger = logging.getLogger(__name__)
 
 MODEL_LOCAL_PATH = ROOT / "models" / "YOLOv8_Small_RDD.pt"
 
-
-@st.cache_resource
-def load_yolo_model(model_path: str):
-    return YOLO(model_path)
-
-
-net = load_yolo_model(str(MODEL_LOCAL_PATH))
-
-CLASSES = [
-    "Longitudinal Crack",
-    "Transverse Crack",
-    "Alligator Crack",
-    "Potholes"
-]
-
-
-class Detection(NamedTuple):
-    class_id: int
-    label: str
-    score: float
-    box: np.ndarray
-
+net = load_model(MODEL_LOCAL_PATH)
 
 render_page_header(
     icon="🖼️",
@@ -80,9 +58,12 @@ with st.container(key="rs-upload-card"):
         max_value=1.0,
         value=0.25,
         step=0.05,
-        help="Default is 0.25. Lower if damage is faint or not detected; raise if you see false positives."
+        help="Default is 0.25. Lower if damage is faint or not detected; raise if you see false positives.",
     )
-    st.caption("Default is 0.25. Lower the threshold if damage isn't being detected (cracks and potholes often have lower confidence scores).")
+    st.caption(
+        "Default is 0.25. Lower the threshold if damage isn't being detected "
+        "(cracks and potholes often have lower confidence scores)."
+    )
 
     st.markdown("**Or test with a sample image:**")
     sample_cols = st.columns(4)
@@ -98,7 +79,6 @@ with st.container(key="rs-upload-card"):
             st.session_state["selected_sample"] = samples_dir / "longitudinal_crack.jpg"
     with sample_cols[2]:
         if st.button("Transverse Crack", width="stretch"):
-            st.session_state["transverse_crack"] = True
             st.session_state["selected_sample"] = samples_dir / "transverse_crack.jpg"
     with sample_cols[3]:
         if st.button("Pothole & Crack", width="stretch"):
@@ -106,27 +86,42 @@ with st.container(key="rs-upload-card"):
 
 image_source = None
 image_bytes = None
+source_name = "sample"
+
 if image_file is not None:
     image_source = image_file
     image_bytes = image_file.getvalue()
+    source_name = image_file.name
     st.session_state["selected_sample"] = None
 elif st.session_state.get("selected_sample") and Path(st.session_state["selected_sample"]).exists():
     sample_path = Path(st.session_state["selected_sample"])
     image_source = sample_path
     image_bytes = sample_path.read_bytes()
+    source_name = sample_path.name
     st.info(f"Loaded sample image: **{sample_path.name}**")
 
 if image_source is not None:
-    # Load and normalize the image
-    raw_image = Image.open(image_source)
-    # Apply EXIF rotation (if any from mobile cameras) and ensure 3-channel RGB
-    image = ImageOps.exif_transpose(raw_image).convert("RGB")
+    try:
+        raw_image = Image.open(image_source)
+        raw_image.load()
+        # Apply EXIF rotation (if any from mobile cameras) and ensure 3-channel RGB
+        image = ImageOps.exif_transpose(raw_image).convert("RGB")
+    except Exception:
+        logger.exception("Failed to decode image from source %s", source_name)
+        st.error("Couldn't read this file as an image. Please upload a valid PNG or JPG.")
+        st.stop()
+
     _image = np.array(image)
     h_ori, w_ori = _image.shape[:2]
 
     with st.spinner("Running detection..."):
-        # Predict using PIL Image directly so YOLO applies letterboxing and preserves aspect ratio
-        results = net.predict(image, conf=score_threshold, imgsz=640, verbose=False)
+        try:
+            # Predict using PIL Image directly so YOLO applies letterboxing and preserves aspect ratio
+            results = net.predict(image, conf=score_threshold, imgsz=640, verbose=False)
+        except Exception:
+            logger.exception("Image inference failed for %s", source_name)
+            st.error("Detection failed on this image. Please try a different file.")
+            st.stop()
 
     # Save the results
     detections = []
@@ -145,6 +140,8 @@ if image_source is not None:
                     box=xyxy_val,
                 )
             )
+
+    logger.info("Image %s: %d detection(s)", source_name, len(detections))
 
     # YOLO plot() returns a BGR numpy array on the original image canvas
     annotated_frame_bgr = results[0].plot()
@@ -169,7 +166,10 @@ if image_source is not None:
                     unsafe_allow_html=True,
                 )
     else:
-        st.info(f"No damage detected at confidence threshold {score_threshold:.2f}. Try lowering the confidence threshold slider above (e.g. to 0.15–0.20) if the damage is faint.")
+        st.info(
+            f"No damage detected at confidence threshold {score_threshold:.2f}. "
+            "Try lowering the confidence threshold slider above (e.g. to 0.15–0.20) if the damage is faint."
+        )
 
     st.write("")
     col1, col2 = st.columns(2)
