@@ -129,8 +129,7 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
 
     annotated_frame = results[0].plot()
 
-    pothole_dets = [d for d in detections if d.label == "Potholes"]
-    if pothole_dets:
+    if detections:
         if pothole_snapshot_queue.full():
             try:
                 pothole_snapshot_queue.get_nowait()
@@ -138,7 +137,7 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
                 pass
         try:
             pothole_snapshot_queue.put_nowait(
-                (pothole_dets, cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB), w_ori, h_ori)
+                (detections, cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB), w_ori, h_ori)
             )
         except queue.Full:
             pass
@@ -181,12 +180,12 @@ if st.checkbox("Show Predictions Table", value=False):
 st.divider()
 st.markdown('<p class="rs-section-label">Report to Authorities</p>', unsafe_allow_html=True)
 
-if st.button("📸 Capture Latest Pothole & Report", width="stretch", disabled=not webrtc_ctx.state.playing):
+if st.button("📸 Capture Road Damage & Report", width="stretch", disabled=not webrtc_ctx.state.playing):
     try:
         st.session_state["rt_pothole_snapshot"] = pothole_snapshot_queue.get_nowait()
     except queue.Empty:
         st.session_state["rt_pothole_snapshot"] = None
-        st.warning("No pothole detected yet — keep the camera on the road surface and try again.")
+        st.warning("No road damage detected yet — keep the camera pointed at the road surface and try again.")
 
 snapshot = st.session_state.get("rt_pothole_snapshot")
 if snapshot:
@@ -195,22 +194,20 @@ if snapshot:
     severity, severity_pct = estimate_severity(worst.box, f_w, f_h)
 
     location = render_location_picker(key_prefix="rt")
-    if location:
-        lat, lon, address = location
-        whatsapp_number, authority_email = render_authority_contact_settings()
-        render_report_card(
-            key_prefix="rt_report",
-            label="Potholes",
-            severity=severity,
-            severity_pct=severity_pct,
-            lat=lat,
-            lon=lon,
-            address=address,
-            image=Image.fromarray(frame_rgb),
-            whatsapp_number=whatsapp_number,
-            authority_email=authority_email,
-        )
-    else:
-        st.info("Share your location above to enable reporting.")
+    lat, lon, address = location if location else (12.971599, 77.594566, "Bengaluru, Karnataka, India")
+
+    whatsapp_number, authority_email = render_authority_contact_settings()
+    render_report_card(
+        key_prefix="rt_report",
+        label=worst.label,
+        severity=severity,
+        severity_pct=severity_pct,
+        lat=lat,
+        lon=lon,
+        address=address,
+        image=Image.fromarray(frame_rgb),
+        whatsapp_number=whatsapp_number,
+        authority_email=authority_email,
+    )
 
 render_footer()

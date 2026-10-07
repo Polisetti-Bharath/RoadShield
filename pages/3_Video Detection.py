@@ -141,7 +141,7 @@ def processVideo(video_file, score_threshold):
         cv2writer = cv2.VideoWriter(temp_file_infer, fourcc_mp4, _fps, (_width, _height))
 
         detection_totals = Counter()
-        best_pothole = None  # (severity_pct, severity_label, annotated_frame_rgb)
+        best_damage = None  # (severity_pct, severity_label, annotated_frame_rgb, label_name)
 
         # Read until video is completed
         _frame_counter = 0
@@ -174,11 +174,9 @@ def processVideo(video_file, score_threshold):
             detection_totals.update(d.label for d in detections)
 
             for det in detections:
-                if det.label != "Potholes":
-                    continue
                 severity, severity_pct = estimate_severity(det.box, _width, _height)
-                if best_pothole is None or severity_pct > best_pothole[0]:
-                    best_pothole = (severity_pct, severity, None)
+                if best_damage is None or severity_pct > best_damage[0]:
+                    best_damage = (severity_pct, severity, None, det.label)
 
             # YOLO plot() returns BGR image with drawn bounding boxes at native resolution
             annotated_frame_bgr = results[0].plot()
@@ -186,8 +184,8 @@ def processVideo(video_file, score_threshold):
             # For Streamlit display (expects RGB)
             annotated_frame_rgb = cv2.cvtColor(annotated_frame_bgr, cv2.COLOR_BGR2RGB)
 
-            if best_pothole is not None and best_pothole[2] is None:
-                best_pothole = (best_pothole[0], best_pothole[1], annotated_frame_rgb.copy())
+            if best_damage is not None and best_damage[2] is None:
+                best_damage = (best_damage[0], best_damage[1], annotated_frame_rgb.copy(), best_damage[3])
 
             # Write the BGR image to output video
             cv2writer.write(annotated_frame_bgr)
@@ -203,7 +201,7 @@ def processVideo(video_file, score_threshold):
         videoCapture.release()
         cv2writer.release()
 
-    st.session_state["video_best_pothole"] = best_pothole
+    st.session_state["video_best_damage"] = best_damage
 
     # Download button for the video
     st.success("Video processed successfully!")
@@ -245,30 +243,27 @@ def processVideo(video_file, score_threshold):
             # Rerun the application
             st.rerun()
 
-    if best_pothole is not None:
-        severity_pct, severity, frame_rgb = best_pothole
+    if best_damage is not None:
+        severity_pct, severity, frame_rgb, damage_label = best_damage
         st.write("")
         st.markdown('<p class="rs-section-label">Report to Authorities</p>', unsafe_allow_html=True)
-        st.caption("Showing the most severe pothole frame found in this video.")
+        st.caption(f"Showing the most severe damage frame found in this video ({damage_label}).")
 
         location = render_location_picker(key_prefix="vid")
-        if location:
-            lat, lon, address = location
-            whatsapp_number, authority_email = render_authority_contact_settings()
-            render_report_card(
-                key_prefix="vid_report",
-                label="Potholes",
-                severity=severity,
-                severity_pct=severity_pct,
-                lat=lat,
-                lon=lon,
-                address=address,
-                image=Image.fromarray(frame_rgb),
-                whatsapp_number=whatsapp_number,
-                authority_email=authority_email,
-            )
-        else:
-            st.info("Share your location above to enable reporting.")
+        lat, lon, address = location if location else (12.971599, 77.594566, "Bengaluru, Karnataka, India")
+        whatsapp_number, authority_email = render_authority_contact_settings()
+        render_report_card(
+            key_prefix="vid_report",
+            label=damage_label,
+            severity=severity,
+            severity_pct=severity_pct,
+            lat=lat,
+            lon=lon,
+            address=address,
+            image=Image.fromarray(frame_rgb),
+            whatsapp_number=whatsapp_number,
+            authority_email=authority_email,
+        )
 
 
 render_page_header(

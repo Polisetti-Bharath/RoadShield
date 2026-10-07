@@ -114,6 +114,58 @@ def reverse_geocode(lat: float, lon: float):
         return None
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def geocode_address(query: str):
+    """Converts a street name, city, or landmark into (lat, lon, display_name)."""
+    if not query or not query.strip():
+        return None
+    try:
+        resp = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": query.strip(), "format": "jsonv2", "limit": 1},
+            headers={"User-Agent": "RoadShield-PBL-Project"},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        results = resp.json()
+        if results:
+            first = results[0]
+            return float(first["lat"]), float(first["lon"]), first.get("display_name")
+    except Exception:
+        pass
+    return None
+
+
+def get_network_location():
+    """Auto-detects device/network location via IP geolocation when browser GPS is blocked."""
+    try:
+        r = requests.get("http://ip-api.com/json", timeout=3)
+        if r.status_code == 200:
+            d = r.json()
+            if d.get("status") == "success":
+                city = d.get("city", "")
+                region = d.get("regionName", "")
+                country = d.get("country", "")
+                addr = ", ".join(filter(None, [city, region, country]))
+                return float(d.get("lat")), float(d.get("lon")), addr
+    except Exception:
+        pass
+
+    try:
+        r = requests.get("https://ipapi.co/json/", timeout=3)
+        if r.status_code == 200:
+            d = r.json()
+            city = d.get("city", "")
+            region = d.get("region", "")
+            country = d.get("country_name", "")
+            addr = ", ".join(filter(None, [city, region, country]))
+            return float(d.get("latitude")), float(d.get("longitude")), addr
+    except Exception:
+        pass
+
+    return 17.3850, 78.4867, "Hyderabad, Telangana, India"
+
+
 def estimate_severity(box, frame_width: int, frame_height: int):
     """Rough severity from how much of the frame the damage box covers."""
     x1, y1, x2, y2 = box
@@ -127,44 +179,101 @@ def estimate_severity(box, frame_width: int, frame_height: int):
     return "Low", pct
 
 
-def render_location_picker(key_prefix: str):
-    """Renders a location-capture widget. Returns (lat, lon, address) once resolved,
-    or None while the user still needs to grant location access / enter it manually."""
+def render_location_picker(key_prefix: str, default_address: str = "Hyderabad, Telangana, India"):
+    """Renders a comprehensive location-capture widget with auto-detection,
+    browser GPS, address search, and manual coordinates."""
     state_key = f"{key_prefix}_location"
-    st.session_state.setdefault(state_key, None)
 
-    if st.session_state[state_key] is None:
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.caption("Tap to share your current location:")
-            loc = streamlit_geolocation()
-            if loc and loc.get("latitude") is not None:
-                st.session_state[state_key] = (loc["latitude"], loc["longitude"])
+    # Auto-initialize location if not already set
+    if state_key not in st.session_state or st.session_state[state_key] is None:
+        net_loc = get_network_location()
+        if net_loc:
+            st.session_state[state_key] = net_loc
+        else:
+            st.session_state[state_key] = (17.3850, 78.4867, default_address)
+
+    current_val = st.session_state[state_key]
+    if len(current_val) == 3:
+        lat, lon, custom_addr = current_val
+    else:
+        lat, lon = current_val
+        custom_addr = None
+
+    display_addr = custom_addr or (reverse_geocode(lat, lon) if (lat and lon) else default_address)
+
+    st.markdown(
+        f"""
+        <div style="background: rgba(30, 41, 59, 0.7); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 8px;">
+            <span style="color: #10B981; font-weight: 600;">📍 Active Location:</span>
+            <span style="color: #F8FAFC;"> {display_addr}</span>
+            <span style="color: #94A3B8; font-size: 0.85em; margin-left: 8px;">({lat:.4f}, {lon:.4f})</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("⚙️ Change Location / Auto-Detect Settings", expanded=False):
+        tab1, tab2, tab3 = st.tabs(["🎯 Auto-Detect", "🔍 Search Address / Road", "✏️ Manual Coordinates"])
+
+        with tab1:
+            st.caption("Click below to re-detect your live location via Network / IP or Browser GPS:")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("🎯 Auto-Detect My Location Now", key=f"{key_prefix}_autodetect_btn", width="stretch", type="primary"):
+                    with st.spinner("Detecting your location..."):
+                        detected = get_network_location()
+                        if detected:
+                            st.session_state[state_key] = detected
+                            st.success(f"Location detected: {detected[2]}")
+                            st.rerun()
+                        else:
+                            st.error("Could not automatically determine location. Please use Search or Coordinates tab.")
+            with c2:
+                st.caption("Browser Hardware GPS:")
+                loc = streamlit_geolocation()
+                if loc and loc.get("latitude") is not None:
+                    browser_lat = float(loc["latitude"])
+                    browser_lon = float(loc["longitude"])
+                    if abs(browser_lat - lat) > 0.0001 or abs(browser_lon - lon) > 0.0001:
+                        addr = reverse_geocode(browser_lat, browser_lon)
+                        st.session_state[state_key] = (browser_lat, browser_lon, addr)
+                        st.rerun()
+
+        with tab2:
+            st.caption("Type any road name, area, or landmark (e.g., 'Banjara Hills', 'MG Road', 'Connaught Place'):")
+            search_col, btn_col = st.columns([3, 1])
+            with search_col:
+                search_query = st.text_input("Enter location to search", placeholder="e.g. Hitec City, Hyderabad", key=f"{key_prefix}_search_input", label_visibility="collapsed")
+            with btn_col:
+                if st.button("🔍 Search", key=f"{key_prefix}_search_btn", width="stretch"):
+                    if search_query:
+                        with st.spinner("Searching location..."):
+                            geo_res = geocode_address(search_query)
+                            if geo_res:
+                                st.session_state[state_key] = geo_res
+                                st.success(f"Found: {geo_res[2]}")
+                                st.rerun()
+                            else:
+                                st.warning("Location not found. Please try a different query.")
+
+        with tab3:
+            st.caption("Enter precise latitude and longitude:")
+            m_lat = st.number_input("Latitude", value=float(lat), format="%.6f", key=f"{key_prefix}_lat_num")
+            m_lon = st.number_input("Longitude", value=float(lon), format="%.6f", key=f"{key_prefix}_lon_num")
+            m_addr = st.text_input("Custom Address Label (Optional)", value=display_addr or "", key=f"{key_prefix}_addr_custom")
+            if st.button("💾 Apply Coordinates", key=f"{key_prefix}_apply_coords_btn", width="stretch"):
+                st.session_state[state_key] = (m_lat, m_lon, m_addr if m_addr else None)
                 st.rerun()
-        with col2:
-            with st.popover("Or enter coordinates manually"):
-                lat = st.number_input(
-                    "Latitude", value=0.0, format="%.6f", key=f"{key_prefix}_lat_manual"
-                )
-                lon = st.number_input(
-                    "Longitude", value=0.0, format="%.6f", key=f"{key_prefix}_lon_manual"
-                )
-                if st.button("Use these coordinates", key=f"{key_prefix}_manual_btn"):
-                    st.session_state[state_key] = (lat, lon)
-                    st.rerun()
-        return None
 
-    lat, lon = st.session_state[state_key]
-    address = reverse_geocode(lat, lon)
-    return lat, lon, address
+    return lat, lon, display_addr
 
 
 def build_complaint_pdf(
     label: str,
     severity: str,
     severity_pct: float,
-    lat: float,
-    lon: float,
+    lat,
+    lon,
     address,
     timestamp: datetime,
     image: Image.Image,
@@ -192,13 +301,20 @@ def build_complaint_pdf(
     pdf.cell(0, 8, "Details", ln=True)
     pdf.set_font("Helvetica", "", 11)
 
+    coords_str = f"{lat:.6f}, {lon:.6f}" if (lat is not None and lon is not None) else "Not provided"
+    maps_link = (
+        f"https://www.google.com/maps?q={lat:.6f},{lon:.6f}"
+        if (lat is not None and lon is not None)
+        else "N/A"
+    )
+
     rows = [
         ("Damage type", label),
         ("Severity", f"{severity} (~{severity_pct:.1f}% of frame)"),
         ("Date / time", timestamp.strftime("%d %b %Y, %I:%M %p")),
-        ("Coordinates", f"{lat:.6f}, {lon:.6f}"),
+        ("Coordinates", coords_str),
         ("Address", address or "Not available"),
-        ("Map link", f"https://www.google.com/maps?q={lat:.6f},{lon:.6f}"),
+        ("Map link", maps_link),
     ]
     for key, value in rows:
         pdf.set_x(pdf.l_margin)
@@ -216,9 +332,9 @@ def render_report_card(
     label: str,
     severity: str,
     severity_pct: float,
-    lat: float,
-    lon: float,
-    address,
+    lat=None,
+    lon=None,
+    address=None,
     image: Image.Image,
     whatsapp_number: str = "",
     authority_email: str = "",
@@ -235,18 +351,26 @@ def render_report_card(
     set once per page and reused for every report card on it.
     """
     timestamp = datetime.now()
-    maps_link = f"https://www.google.com/maps?q={lat:.6f},{lon:.6f}"
+    if lat is not None and lon is not None:
+        maps_link = f"https://www.google.com/maps?q={lat:.6f},{lon:.6f}"
+        location_text = address or f"{lat:.6f}, {lon:.6f}"
+    else:
+        maps_link = "https://maps.google.com"
+        location_text = address or "Location not specified"
 
     message = (
         f"Road damage report ({label}, {severity} severity) detected via RoadShield.\n"
-        f"Location: {address or f'{lat:.6f}, {lon:.6f}'}\n"
+        f"Location: {location_text}\n"
         f"Map: {maps_link}\n"
         f"Reported: {timestamp.strftime('%d %b %Y, %I:%M %p')}\n"
         f"Please look into repairing this at the earliest."
     )
 
-    st.markdown(f"📍 **{address or f'{lat:.6f}, {lon:.6f}'}**")
-    st.caption(f"Severity: {severity} (~{severity_pct:.1f}% of frame) · [Open in Google Maps]({maps_link})")
+    st.markdown(f"📍 **{location_text}**")
+    if lat is not None and lon is not None:
+        st.caption(f"Severity: {severity} (~{severity_pct:.1f}% of frame) · [Open in Google Maps]({maps_link})")
+    else:
+        st.caption(f"Severity: {severity} (~{severity_pct:.1f}% of frame)")
 
     if not whatsapp_number and not authority_email:
         st.caption("No authority contact set yet — open '⚙️ Authority contact' above to add one.")

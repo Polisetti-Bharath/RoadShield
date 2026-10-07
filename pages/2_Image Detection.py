@@ -198,40 +198,45 @@ if image_source is not None:
             width="stretch",
         )
 
-    pothole_detections = [d for d in detections if d.label == "Potholes"]
-    if pothole_detections:
+    if detections:
         st.write("")
         st.markdown('<p class="rs-section-label">Report to Authorities</p>', unsafe_allow_html=True)
 
         exif_location = get_gps_from_exif(image_bytes)
-        if exif_location:
-            lat, lon = exif_location
-            address = reverse_geocode(lat, lon)
-            st.caption("📍 Location auto-detected from the photo's EXIF data.")
-        else:
-            location = render_location_picker(key_prefix="img")
-            lat, lon, address = location if location else (None, None, None)
+        if exif_location and "img_location" not in st.session_state:
+            exif_lat, exif_lon = exif_location
+            exif_addr = reverse_geocode(exif_lat, exif_lon)
+            st.session_state["img_location"] = (exif_lat, exif_lon, exif_addr)
+            st.caption("📍 Coordinates automatically read from photo's EXIF GPS metadata.")
 
-        if lat is not None:
-            whatsapp_number, authority_email = render_authority_contact_settings()
-            for i, det in enumerate(pothole_detections):
-                severity, severity_pct = estimate_severity(det.box, w_ori, h_ori)
-                with st.expander(
-                    f"🚨 Pothole #{i + 1} — {severity} severity", expanded=(len(pothole_detections) == 1)
-                ):
-                    render_report_card(
-                        key_prefix=f"img_{i}",
-                        label=det.label,
-                        severity=severity,
-                        severity_pct=severity_pct,
-                        lat=lat,
-                        lon=lon,
-                        address=address,
-                        image=Image.fromarray(_image_pred),
-                        whatsapp_number=whatsapp_number,
-                        authority_email=authority_email,
-                    )
-        else:
-            st.info("Share your location above to enable reporting.")
+        lat, lon, address = render_location_picker(key_prefix="img")
+
+        whatsapp_number, authority_email = render_authority_contact_settings()
+
+        sorted_detections = sorted(
+            detections,
+            key=lambda d: estimate_severity(d.box, w_ori, h_ori)[1],
+            reverse=True,
+        )
+
+        for i, det in enumerate(sorted_detections):
+            severity, severity_pct = estimate_severity(det.box, w_ori, h_ori)
+            icon = "🚨" if det.label == "Potholes" else "⚠️"
+            with st.expander(
+                f"{icon} {det.label} #{i + 1} — {severity} severity (~{severity_pct:.1f}% area)",
+                expanded=(i == 0),
+            ):
+                render_report_card(
+                    key_prefix=f"img_{i}",
+                    label=det.label,
+                    severity=severity,
+                    severity_pct=severity_pct,
+                    lat=lat,
+                    lon=lon,
+                    address=address,
+                    image=Image.fromarray(_image_pred),
+                    whatsapp_number=whatsapp_number,
+                    authority_email=authority_email,
+                )
 
 render_footer()
