@@ -40,16 +40,15 @@ ROOT = HERE.parent
 
 logger = logging.getLogger(__name__)
 
-MODEL_LOCAL_PATH = ROOT / "./models/YOLOv8_Small_RDD.pt"
+MODEL_LOCAL_PATH = ROOT / "models" / "YOLOv8_Small_RDD.pt"
 
-# Session-specific caching
-# Load the model
-cache_key = "yolov8smallrdd"
-if cache_key in st.session_state:
-    net = st.session_state[cache_key]
-else:
-    net = YOLO(MODEL_LOCAL_PATH)
-    st.session_state[cache_key] = net
+
+@st.cache_resource
+def load_yolo_model(model_path: str):
+    return YOLO(model_path)
+
+
+net = load_yolo_model(str(MODEL_LOCAL_PATH))
 
 CLASSES = [
     "Longitudinal Crack",
@@ -105,8 +104,8 @@ def processVideo(video_file, score_threshold):
     else:
         _width = int(videoCapture.get(cv2.CAP_PROP_FRAME_WIDTH))
         _height = int(videoCapture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        _fps = videoCapture.get(cv2.CAP_PROP_FPS)
-        _frame_count = int(videoCapture.get(cv2.CAP_PROP_FRAME_COUNT))
+        _fps = videoCapture.get(cv2.CAP_PROP_FPS) or 25.0
+        _frame_count = int(videoCapture.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
         _duration = _frame_count/_fps
         _duration_minutes = int(_duration/60)
         _duration_seconds = int(_duration%60)
@@ -138,10 +137,6 @@ def processVideo(video_file, score_threshold):
 
         imageLocation = st.empty()
 
-        # Issue with opencv-python with pip doesn't support h264 codec due to license, so we cant show the mp4 video on the streamlit in the cloud
-        # If you can install the opencv through conda using this command, maybe you can render the video for the streamlit
-        # $ conda install -c conda-forge opencv
-        # fourcc_mp4 = cv2.VideoWriter_fourcc(*'h264')
         fourcc_mp4 = cv2.VideoWriter_fourcc(*'mp4v')
         cv2writer = cv2.VideoWriter(temp_file_infer, fourcc_mp4, _fps, (_width, _height))
 
@@ -150,60 +145,59 @@ def processVideo(video_file, score_threshold):
 
         # Read until video is completed
         _frame_counter = 0
-        while(videoCapture.isOpened()):
+        while videoCapture.isOpened():
             ret, frame = videoCapture.read()
-            if ret == True:
-
-                # Convert color-chanel
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-                # Perform inference
-                _image = np.array(frame)
-
-                image_resized = cv2.resize(_image, (640, 640), interpolation = cv2.INTER_AREA)
-                results = net.predict(image_resized, conf=score_threshold)
-
-                # Save the results
-                for result in results:
-                    boxes = result.boxes.cpu().numpy()
-                    detections = [
-                    Detection(
-                        class_id=int(_box.cls),
-                        label=CLASSES[int(_box.cls)],
-                        score=float(_box.conf),
-                        box=_box.xyxy[0].astype(int),
-                        )
-                        for _box in boxes
-                    ]
-                    detection_totals.update(d.label for d in detections)
-
-                    for det in detections:
-                        if det.label != "Potholes":
-                            continue
-                        severity, severity_pct = estimate_severity(det.box, 640, 640)
-                        if best_pothole is None or severity_pct > best_pothole[0]:
-                            best_pothole = (severity_pct, severity, None)  # frame filled in below
-
-                annotated_frame = results[0].plot()
-                _image_pred = cv2.resize(annotated_frame, (_width, _height), interpolation = cv2.INTER_AREA)
-
-                if best_pothole is not None and best_pothole[2] is None:
-                    best_pothole = (best_pothole[0], best_pothole[1], _image_pred.copy())
-
-                # Write the image to file
-                _out_frame = cv2.cvtColor(_image_pred, cv2.COLOR_RGB2BGR)
-                cv2writer.write(_out_frame)
-
-                # Display the image
-                imageLocation.image(_image_pred)
-
-                _frame_counter = _frame_counter + 1
-                inferenceBar.progress(_frame_counter/_frame_count, text=inferenceBarText)
-
-            # Break the loop
-            else:
+            if not ret:
                 inferenceBar.empty()
                 break
+
+            # frame is native BGR from cv2.VideoCapture
+            # YOLO predict expects BGR for numpy arrays, letterboxes internally to 640x640
+            results = net.predict(frame, conf=score_threshold, imgsz=640, verbose=False)
+
+            detections = []
+            for result in results:
+                boxes = result.boxes.cpu().numpy()
+                for _box in boxes:
+                    cls_id = int(_box.cls[0]) if hasattr(_box.cls, "__len__") else int(_box.cls)
+                    conf_val = float(_box.conf[0]) if hasattr(_box.conf, "__len__") else float(_box.conf)
+                    xyxy_val = _box.xyxy[0].astype(int) if len(_box.xyxy.shape) > 1 else _box.xyxy.astype(int)
+                    label_name = net.names.get(cls_id, CLASSES[cls_id] if cls_id < len(CLASSES) else f"Class {cls_id}")
+                    detections.append(
+                        Detection(
+                            class_id=cls_id,
+                            label=label_name,
+                            score=conf_val,
+                            box=xyxy_val,
+                        )
+                    )
+            detection_totals.update(d.label for d in detections)
+
+            for det in detections:
+                if det.label != "Potholes":
+                    continue
+                severity, severity_pct = estimate_severity(det.box, _width, _height)
+                if best_pothole is None or severity_pct > best_pothole[0]:
+                    best_pothole = (severity_pct, severity, None)
+
+            # YOLO plot() returns BGR image with drawn bounding boxes at native resolution
+            annotated_frame_bgr = results[0].plot()
+
+            # For Streamlit display (expects RGB)
+            annotated_frame_rgb = cv2.cvtColor(annotated_frame_bgr, cv2.COLOR_BGR2RGB)
+
+            if best_pothole is not None and best_pothole[2] is None:
+                best_pothole = (best_pothole[0], best_pothole[1], annotated_frame_rgb.copy())
+
+            # Write the BGR image to output video
+            cv2writer.write(annotated_frame_bgr)
+
+            # Display the RGB image in Streamlit
+            imageLocation.image(annotated_frame_rgb)
+
+            _frame_counter += 1
+            if _frame_count > 0:
+                inferenceBar.progress(min(1.0, _frame_counter / _frame_count), text=inferenceBarText)
 
         # When everything done, release the video capture object
         videoCapture.release()
@@ -231,7 +225,7 @@ def processVideo(video_file, score_threshold):
                     unsafe_allow_html=True,
                 )
     else:
-        st.info("No damage detected across any frame at the current confidence threshold.")
+        st.info(f"No damage detected across any frame at confidence threshold {score_threshold:.2f}. Try lowering the confidence threshold.")
 
     st.write("")
     col1, col2 = st.columns(2)
@@ -287,8 +281,16 @@ with st.container(key="rs-upload-card"):
     video_file = st.file_uploader("Upload a video (.mp4)", type=".mp4", disabled=st.session_state.runningInference)
     st.caption("There is a 1GB limit for video size. Resize or trim your video if it's larger than that.")
 
-    score_threshold = st.slider("Confidence Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05, disabled=st.session_state.runningInference)
-    st.caption("Lower the threshold if damage isn't being detected. Raise it if you're seeing false positives.")
+    score_threshold = st.slider(
+        "Confidence Threshold",
+        min_value=0.05,
+        max_value=1.0,
+        value=0.25,
+        step=0.05,
+        disabled=st.session_state.runningInference,
+        help="Default is 0.25. Lower if damage isn't being detected; raise if you see false positives."
+    )
+    st.caption("Default is 0.25. Lower the threshold if damage isn't being detected (cracks and potholes in drive-through video often have subtle textures).")
 
 if video_file is not None:
     st.write("")

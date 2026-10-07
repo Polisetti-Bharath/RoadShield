@@ -41,20 +41,22 @@ ROOT = HERE.parent
 
 logger = logging.getLogger(__name__)
 
-MODEL_LOCAL_PATH = ROOT / "./models/YOLOv8_Small_RDD.pt"
+MODEL_LOCAL_PATH = ROOT / "models" / "YOLOv8_Small_RDD.pt"
 
 # STUN Server
-STUN_STRING = "stun:" + str(getSTUNServer())
-STUN_SERVER = [{"urls": [STUN_STRING]}]
+try:
+    STUN_STRING = "stun:" + str(getSTUNServer())
+    STUN_SERVER = [{"urls": [STUN_STRING]}]
+except Exception:
+    STUN_SERVER = [{"urls": ["stun:stun.l.google.com:19302"]}]
 
-# Session-specific caching
-# Load the model
-cache_key = "yolov8smallrdd"
-if cache_key in st.session_state:
-    net = st.session_state[cache_key]
-else:
-    net = YOLO(MODEL_LOCAL_PATH)
-    st.session_state[cache_key] = net
+
+@st.cache_resource
+def load_yolo_model(model_path: str):
+    return YOLO(model_path)
+
+
+net = load_yolo_model(str(MODEL_LOCAL_PATH))
 
 CLASSES = [
     "Longitudinal Crack",
@@ -63,11 +65,13 @@ CLASSES = [
     "Potholes"
 ]
 
+
 class Detection(NamedTuple):
     class_id: int
     label: str
     score: float
     box: np.ndarray
+
 
 render_page_header(
     icon="📷",
@@ -75,50 +79,72 @@ render_page_header(
     subtitle="Detect road damage live using a USB webcam — useful for on-site monitoring with personnel on the ground.",
 )
 
-# NOTE: The callback will be called in another thread,
-#       so use a queue here for thread-safety to pass the data
-#       from inside to outside the callback.
-# TODO: A general-purpose shared state object may be more useful.
-result_queue: "queue.Queue[List[Detection]]" = queue.Queue()
-# Holds (detections, annotated_frame_rgb) only for frames where a pothole was found,
-# so the "Report to Authorities" button below can grab the latest one on demand.
+score_threshold = st.slider(
+    "Confidence Threshold",
+    min_value=0.05,
+    max_value=1.0,
+    value=0.25,
+    step=0.05,
+    help="Default is 0.25. Lower if damage isn't being detected; raise if you see false positives."
+)
+st.caption("Default is 0.25. Cracks and potholes in live camera feeds often have lower confidence scores. Lower the slider if damage is not detected.")
+
+# Holds recent detections for UI display
+result_queue: "queue.Queue[List[Detection]]" = queue.Queue(maxsize=10)
+# Holds (detections, annotated_frame_rgb, frame_width, frame_height) for reporting
 pothole_snapshot_queue: "queue.Queue" = queue.Queue(maxsize=1)
 
+
 def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
-
     image = frame.to_ndarray(format="bgr24")
-    h_ori = image.shape[0]
-    w_ori = image.shape[1]
-    image_resized = cv2.resize(image, (640, 640), interpolation = cv2.INTER_AREA)
-    results = net.predict(image_resized, conf=score_threshold)
+    h_ori, w_ori = image.shape[:2]
 
-    # Save the results on the queue
+    # Run inference directly on native frame preserving aspect ratio
+    results = net.predict(image, conf=score_threshold, imgsz=640, verbose=False)
+
+    # Extract detections
+    detections: List[Detection] = []
     for result in results:
         boxes = result.boxes.cpu().numpy()
-        detections = [
-           Detection(
-               class_id=int(_box.cls),
-               label=CLASSES[int(_box.cls)],
-               score=float(_box.conf),
-               box=_box.xyxy[0].astype(int),
+        for _box in boxes:
+            cls_id = int(_box.cls[0]) if hasattr(_box.cls, "__len__") else int(_box.cls)
+            conf_val = float(_box.conf[0]) if hasattr(_box.conf, "__len__") else float(_box.conf)
+            xyxy_val = _box.xyxy[0].astype(int) if len(_box.xyxy.shape) > 1 else _box.xyxy.astype(int)
+            label_name = net.names.get(cls_id, CLASSES[cls_id] if cls_id < len(CLASSES) else f"Class {cls_id}")
+            detections.append(
+                Detection(
+                    class_id=cls_id,
+                    label=label_name,
+                    score=conf_val,
+                    box=xyxy_val,
+                )
             )
-            for _box in boxes
-        ]
-        result_queue.put(detections)
+
+    try:
+        if result_queue.full():
+            result_queue.get_nowait()
+        result_queue.put_nowait(detections)
+    except Exception:
+        pass
 
     annotated_frame = results[0].plot()
-    _image = cv2.resize(annotated_frame, (w_ori, h_ori), interpolation = cv2.INTER_AREA)
 
     pothole_dets = [d for d in detections if d.label == "Potholes"]
     if pothole_dets:
         if pothole_snapshot_queue.full():
-            pothole_snapshot_queue.get_nowait()
-        pothole_snapshot_queue.put_nowait((pothole_dets, cv2.cvtColor(_image, cv2.COLOR_BGR2RGB)))
+            try:
+                pothole_snapshot_queue.get_nowait()
+            except queue.Empty:
+                pass
+        try:
+            pothole_snapshot_queue.put_nowait(
+                (pothole_dets, cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB), w_ori, h_ori)
+            )
+        except queue.Full:
+            pass
 
-    return av.VideoFrame.from_ndarray(_image, format="bgr24")
+    return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
 
-score_threshold = st.slider("Confidence Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05)
-st.caption("Lower the threshold if damage isn't being detected. Raise it if you're seeing false positives.")
 
 st.write("")
 webrtc_ctx = webrtc_streamer(
@@ -128,7 +154,7 @@ webrtc_ctx = webrtc_streamer(
     video_frame_callback=video_frame_callback,
     media_stream_constraints={
         "video": {
-            "width": {"ideal": 1280, "min": 800},
+            "width": {"ideal": 1280, "min": 640},
         },
         "audio": False
     },
@@ -139,10 +165,16 @@ st.divider()
 
 if st.checkbox("Show Predictions Table", value=False):
     if webrtc_ctx.state.playing:
-        labels_placeholder = st.empty()
-        while True:
-            result = result_queue.get()
-            labels_placeholder.table(result)
+        latest = []
+        while not result_queue.empty():
+            try:
+                latest = result_queue.get_nowait()
+            except queue.Empty:
+                break
+        if latest:
+            st.table(latest)
+        else:
+            st.caption("No damage detected in the latest frame.")
     else:
         st.caption("Start the webcam above to see live predictions here.")
 
@@ -158,9 +190,9 @@ if st.button("📸 Capture Latest Pothole & Report", width="stretch", disabled=n
 
 snapshot = st.session_state.get("rt_pothole_snapshot")
 if snapshot:
-    dets, frame_rgb = snapshot
-    worst = max(dets, key=lambda d: estimate_severity(d.box, 640, 640)[1])
-    severity, severity_pct = estimate_severity(worst.box, 640, 640)
+    dets, frame_rgb, f_w, f_h = snapshot
+    worst = max(dets, key=lambda d: estimate_severity(d.box, f_w, f_h)[1])
+    severity, severity_pct = estimate_severity(worst.box, f_w, f_h)
 
     location = render_location_picker(key_prefix="rt")
     if location:
