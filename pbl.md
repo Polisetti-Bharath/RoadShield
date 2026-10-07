@@ -266,8 +266,7 @@ RoadShield/
 ├── .github/workflows/                  # Enterprise CI/CD pipelines
 │   ├── ci.yml                         # Lint (ruff), tests (pytest), image build
 │   ├── cd.yml                         # Gated release pipeline & GHCR publishing
-│   ├── security.yml                   # Scheduled pip-audit & Trivy vulnerability scans
-│   └── dependabot.yml                 # Automated weekly dependency updates
+│   └── security.yml                   # Scheduled pip-audit & Trivy vulnerability scans
 ├── training/
 │   ├── 0_PrepareDatasetYOLOv8.ipynb   # Pascal VOC XML to YOLO TXT dataset preprocessing
 │   ├── 1_TrainingYOLOv8.ipynb         # Ultralytics YOLOv8s training script

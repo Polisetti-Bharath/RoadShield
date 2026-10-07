@@ -79,11 +79,9 @@ This requires the repo's Settings → Actions → General → Workflow permissio
 
 ## Security Scanning
 
-A `Security` GitHub Actions workflow runs on every push/PR to `main`/`ASE`, weekly on a schedule, and on demand:
+A `Security` GitHub Actions workflow runs on every push/PR to `main`, weekly on a schedule, and on demand:
 - **Dependency scan**: [`pip-audit`](https://github.com/pypa/pip-audit) checks `requirements.txt`/`requirements-dev.txt` against known vulnerability databases.
 - **Container scan**: [Trivy](https://github.com/aquasecurity/trivy) builds and scans the Docker image, failing the job on unfixed CRITICAL/HIGH findings.
-
-[Dependabot](.github/dependabot.yml) opens weekly PRs for outdated pip, GitHub Actions, and Docker base-image dependencies.
 
 ## Training
 
