@@ -12,7 +12,7 @@ opencv-python-headless==5.0.0.93
 requests==2.34.2
 streamlit-geolocation==0.0.10
 piexif==1.1.3
-fpdf2==2.8.8
+fpdf2==2.8.9
 
 # Transitive deps pulled in below their fixed version by other packages above;
 # pinned explicitly to clear known CVEs flagged by the container security scan.
