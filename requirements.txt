@@ -7,7 +7,7 @@ streamlit-webrtc==0.78.1
 # (see README) if you have an NVIDIA GPU, then this file will leave it alone.
 torch
 torchvision
-ultralytics==8.4.157
+ultralytics==8.4.172
 opencv-python-headless==5.0.0.93
 requests==2.34.2
 streamlit-geolocation==0.0.10
